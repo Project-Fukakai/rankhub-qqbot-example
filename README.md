@@ -7,7 +7,7 @@ RankHub 的 QQ 查分机器人：QQ 官方机器人 API v2（WebSocket 网关 + 
 | 指令 | 说明 |
 | --- | --- |
 | `/help` | 指令与绑定说明 |
-| `/bind` | RankHub 设备码绑定（在 RankHub App 内确认） |
+| `/bind` | RankHub 授权码绑定（扫机器人发的二维码，在 RankHub App 内确认） |
 | `/unbind` | 撤销令牌并删除本地绑定 |
 | `/me` | 已绑定身份与各游戏档案摘要 |
 | `/b50` | maimai b50 图片（照搬 maimaiDX 的绘制方案） |
@@ -50,6 +50,9 @@ pnpm start
 - `TOKEN_ENC_KEY`：`openssl rand -base64 32`
 - `pnpm assets:fetch` 会下载 maimaiDX `Resource CN1.55.7z`（约 467MB），可用 `MAIMAIDX_STATIC` 复用已有资源包。
 - 本地假 QQ / 假 RankHub 的联调见 `test/e2e`。
+- 绑定走 `POST /v1/interaction/oauth-authorizations`（授权码 + App 扫码）；
+  设备码确认页当前在服务端有缺陷，修复见 `rankhub_net` 分支 `fix/identity-device-flow-20261027`。
+  `RANKHUB_REDIRECT_URI` 必须已在 RankHub 应用上注册（仅作 code 载体）。
 
 ## 许可与署名
 
