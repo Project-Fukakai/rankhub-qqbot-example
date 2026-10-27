@@ -17,3 +17,7 @@ tmp/
 
 # 渲染产物
 test/render/__out__/
+
+# 证据图片（渲染对大，本地保留）
+evidence/**/*.png
+evidence/**/*.jpg

@@ -15,7 +15,9 @@
     "test": "vitest run test/unit",
     "test:e2e": "vitest run test/e2e",
     "test:render": "vitest run test/render",
-    "assets:fetch": "node scripts/fetch-assets.mjs",
+    "assets:fetch": "node scripts/fetch-assets-phi.mjs && node scripts/fetch-assets-mai.mjs",
+    "assets:phi": "node scripts/fetch-assets-phi.mjs",
+    "assets:mai": "node scripts/fetch-assets-mai.mjs",
     "assets:verify": "node scripts/verify-assets.mjs",
     "live:whoami": "tsx scripts/live-whoami.ts",
     "live:gateway": "tsx scripts/live-gateway.ts"
