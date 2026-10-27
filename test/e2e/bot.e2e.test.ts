@@ -185,6 +185,91 @@ describe('E2E 指令管线', () => {
   );
 
   it(
+    '/me：渲染玩家名片（账号资料 + 游戏卡 + 二维码）',
+    async () => {
+      harness = await startHarness();
+      await harness.seedBinding();
+
+      harness.emitGroup('/me', 'msg-me-1');
+      const imageMessage = await harness.waitForImageMessage();
+      expect(imageMessage.body.msg_type).toBe(7);
+      expect(harness.renderer.cardCalls).toHaveLength(1);
+
+      const input = harness.renderer.cardCalls[0]!;
+      expect(input.displayName).toBe('Fake User');
+      expect(input.uid).toBe('100234567');
+      expect(input.games.map((game) => game.name)).toContain('maimai DX');
+      expect(input.cards.map((card) => card.game)).toEqual(
+        expect.arrayContaining(['maimai', 'phigros', 'arcaea']),
+      );
+      // 账号公开 ⇒ 传入二维码 PNG Buffer。
+      expect(input.qr).toBeInstanceOf(Buffer);
+      expect(input.qr!.length).toBeGreaterThan(100);
+    },
+    20_000,
+  );
+
+  it(
+    '/arc：arcaea bests → 渲染 B50 图片（msg_type=7）',
+    async () => {
+      harness = await startHarness();
+      await harness.seedBinding();
+      harness.fakeRankHub.state.bests['arcaea'] = {
+        game: 'arcaea',
+        computedAt: '2026-10-20T00:00:00Z',
+        totals: { potential: 12.34 },
+        buckets: [
+          {
+            key: 'best30',
+            label: 'B30',
+            total: 12.34,
+            items: [
+              {
+                scoreId: 'arc-score-1',
+                songId: 'testify',
+                songName: 'Testify',
+                type: 'byd',
+                difficulty: 'BYD',
+                levelIndex: 3,
+                level: '11',
+                achievements: null,
+                score: 9980000,
+                rating: 14.2,
+                rank: 'EX+',
+                dxScore: null,
+                dxStar: null,
+                fc: 'pm',
+                fs: null,
+                playTime: null,
+                native: {
+                  song_id: 'testify',
+                  score: 9980000,
+                  potential: 14.2,
+                  clear_type: 3,
+                  perfect_count: 1200,
+                  near_count: 2,
+                  miss_count: 0,
+                  constant: 11.5,
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      harness.emitGroup('/arc', 'msg-arc-1');
+      const imageMessage = await harness.waitForImageMessage();
+      expect(imageMessage.body.msg_type).toBe(7);
+      expect(harness.renderer.arcCalls).toHaveLength(1);
+      const input = harness.renderer.arcCalls[0]!;
+      expect(input.profileName).toBe('Fake Arc Player');
+      expect(input.potential).toBe(12.34);
+      expect(input.items).toHaveLength(1);
+    },
+    20_000,
+  );
+
+  it(
     '/b50：maimai profiles+bests → 上传 1 次图片 + msg_type=7',
     async () => {
       harness = await startHarness();

@@ -41,6 +41,8 @@ export const ONE_PX_PNG = Buffer.from(
 export class FakeRenderer implements Renderer {
   readonly maimaiCalls: MaimaiB50RenderInput[] = [];
   readonly phigrosCalls: PhigrosRksRenderInput[] = [];
+  readonly cardCalls: import('../../src/contracts/index.js').PlayerCardRenderInput[] = [];
+  readonly arcCalls: import('../../src/contracts/index.js').ArcaeaB50RenderInput[] = [];
   closed = false;
 
   async renderMaimaiB50(input: MaimaiB50RenderInput): Promise<Buffer> {
@@ -50,6 +52,16 @@ export class FakeRenderer implements Renderer {
 
   async renderPhigrosRks(input: PhigrosRksRenderInput): Promise<Buffer> {
     this.phigrosCalls.push(input);
+    return ONE_PX_PNG;
+  }
+
+  async renderPlayerCard(input: import('../../src/contracts/index.js').PlayerCardRenderInput): Promise<Buffer> {
+    this.cardCalls.push(input);
+    return ONE_PX_PNG;
+  }
+
+  async renderArcaeaB50(input: import('../../src/contracts/index.js').ArcaeaB50RenderInput): Promise<Buffer> {
+    this.arcCalls.push(input);
     return ONE_PX_PNG;
   }
 

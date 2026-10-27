@@ -61,7 +61,34 @@ export interface RefreshedTokens {
 }
 
 /** 契约 `RankHubClient` 的超集：刷新与「按 binding 取可用 access token」不在冻结契约里。 */
-export interface RankHubClientExtended extends RankHubClient {
+/** `/v1/me/profile` 里一条游戏档案摘要。 */
+export interface MeProfileGame {
+  game: string;
+  profileId: string;
+  playerName: string | null;
+  rating: number | null;
+  isPublic: boolean;
+  avatarUrl: string | null;
+  backgroundUrl: string | null;
+}
+
+/** `/v1/me/profile`（OAuth 可用的账号资料面）。 */
+export interface MeProfile {
+  uid: string;
+  displayName: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
+  isPublic: boolean;
+  games: MeProfileGame[];
+}
+
+/** 账号资料端点（rankhub_net 2026-10-27 新增；旧实例返回 404 时由调用方降级）。 */
+export interface MeProfileCapable {
+  getMeProfile(accessToken: string): Promise<MeProfile>;
+}
+
+export interface RankHubClientExtended extends RankHubClient, MeProfileCapable {
   /**
    * 用 binding 里加密保存的 refresh token 换新令牌。
    *
@@ -257,6 +284,18 @@ export function createRankHubClient(
     return toGameCapabilities(readArray(record, 'games'));
   }
 
+  /**
+   * `GET /v1/me/profile`：账号 uid/头像/背景/隐私 + 各游戏档案摘要。
+   *
+   * 该端点由 rankhub_net 新增（2026-10-27）；旧实例会 404，调用方按"不可用"降级。
+   */
+  async function getMeProfile(accessToken: string): Promise<MeProfile> {
+    const data = await http.getV1(apiUrl('/v1/me/profile'), accessToken);
+    const record = asRecord(data);
+    if (record === null) throw invalidResponse('/v1/me/profile 响应不是 JSON 对象');
+    return toMeProfile(record);
+  }
+
   async function listProfiles(accessToken: string, game: string): Promise<GameProfile[]> {
     const profiles: GameProfile[] = [];
     let cursor: string | null = null;
@@ -427,6 +466,7 @@ export function createRankHubClient(
     devicePoll,
     userinfo,
     listGames,
+    getMeProfile,
     listProfiles,
     getBests,
     listScores,
@@ -439,4 +479,36 @@ export function createRankHubClient(
 /** 默认 logger 便利函数（bot 装配时可直接用）。 */
 export function createRankHubLogger(level: 'debug' | 'info' | 'warn' | 'error'): Logger {
   return createLogger(level).child({ module: 'rankhub' });
+}
+
+function toMeProfile(record: Record<string, unknown>): MeProfile {
+  const gamesRaw = record['games'];
+  const games: MeProfileGame[] = [];
+  if (Array.isArray(gamesRaw)) {
+    for (const item of gamesRaw) {
+      const row = asRecord(item);
+      if (row === null) continue;
+      const game = typeof row['game'] === 'string' ? row['game'] : null;
+      const profileId = typeof row['profileId'] === 'string' ? row['profileId'] : null;
+      if (game === null || profileId === null) continue;
+      games.push({
+        game,
+        profileId,
+        playerName: typeof row['playerName'] === 'string' ? row['playerName'] : null,
+        rating: typeof row['rating'] === 'number' ? row['rating'] : null,
+        isPublic: row['isPublic'] === true,
+        avatarUrl: typeof row['avatarUrl'] === 'string' ? row['avatarUrl'] : null,
+        backgroundUrl: typeof row['backgroundUrl'] === 'string' ? row['backgroundUrl'] : null,
+      });
+    }
+  }
+  return {
+    uid: typeof record['uid'] === 'string' ? record['uid'] : '',
+    displayName: typeof record['displayName'] === 'string' ? record['displayName'] : null,
+    bio: typeof record['bio'] === 'string' ? record['bio'] : null,
+    avatarUrl: typeof record['avatarUrl'] === 'string' ? record['avatarUrl'] : null,
+    bannerUrl: typeof record['bannerUrl'] === 'string' ? record['bannerUrl'] : null,
+    isPublic: record['isPublic'] === true,
+    games,
+  };
 }

@@ -10,15 +10,17 @@
  */
 import type { Logger } from '../logger/index.js';
 import type {
+  ArcaeaB50RenderInput,
   MaimaiB50RenderInput,
   PhigrosRksRenderInput,
+  PlayerCardRenderInput,
   Renderer,
 } from '../contracts/index.js';
 
 /** 某个游戏渲染器不可用（模块缺失、资源缺失、浏览器启动失败等）。 */
 export class RendererUnavailableError extends Error {
   constructor(
-    readonly game: 'maimai' | 'phigros',
+    readonly game: 'maimai' | 'phigros' | 'card' | 'arcaea',
     message: string,
   ) {
     super(message);
@@ -83,6 +85,54 @@ async function loadPhigros(
   }
 }
 
+interface CardRendererLike {
+  renderPlayerCard(input: PlayerCardRenderInput): Promise<Buffer>;
+  close(): Promise<void>;
+}
+
+interface ArcRendererLike {
+  renderArcaeaB50(input: ArcaeaB50RenderInput): Promise<Buffer>;
+  close(): Promise<void>;
+}
+
+async function loadCard(
+  config: RendererConfigLike,
+  logger: Logger,
+): Promise<RendererLoad<CardRendererLike>> {
+  try {
+    const module = await import('../render/card/index.js');
+    if (typeof module.createPlayerCardRenderer !== 'function') {
+      return { renderer: null, reason: 'src/render/card 缺少 createPlayerCardRenderer 导出' };
+    }
+    const renderer = module.createPlayerCardRenderer(
+      config.RENDER_BROWSER_PATH === undefined ? {} : { browserPath: config.RENDER_BROWSER_PATH },
+    ) as CardRendererLike;
+    logger.info('名片渲染器已装配');
+    return { renderer, reason: null };
+  } catch (error) {
+    return { renderer: null, reason: errorMessage(error) };
+  }
+}
+
+async function loadArcaea(
+  config: RendererConfigLike,
+  logger: Logger,
+): Promise<RendererLoad<ArcRendererLike>> {
+  try {
+    const module = await import('../render/arc/index.js');
+    if (typeof module.createArcaeaRenderer !== 'function') {
+      return { renderer: null, reason: 'src/render/arc 缺少 createArcaeaRenderer 导出' };
+    }
+    const renderer = module.createArcaeaRenderer(
+      config.RENDER_BROWSER_PATH === undefined ? {} : { browserPath: config.RENDER_BROWSER_PATH },
+    ) as ArcRendererLike;
+    logger.info('arcaea 渲染器已装配');
+    return { renderer, reason: null };
+  } catch (error) {
+    return { renderer: null, reason: errorMessage(error) };
+  }
+}
+
 /**
  * 装配组合渲染器。
  *
@@ -95,7 +145,12 @@ export async function createRenderer(
   logger: Logger,
 ): Promise<Renderer> {
   const log = logger.child({ module: 'renderer' });
-  const [mai, phi] = await Promise.all([loadMaimai(config, log), loadPhigros(config, log)]);
+  const [mai, phi, card, arc] = await Promise.all([
+    loadMaimai(config, log),
+    loadPhigros(config, log),
+    loadCard(config, log),
+    loadArcaea(config, log),
+  ]);
 
   if (mai.renderer === null) {
     log.warn('maimai 渲染器不可用，/b50 将降级为文字摘要', { reason: mai.reason });
@@ -103,9 +158,17 @@ export async function createRenderer(
   if (phi.renderer === null) {
     log.warn('phigros 渲染器不可用，/rks 将降级为文字摘要', { reason: phi.reason });
   }
+  if (card.renderer === null) {
+    log.warn('名片渲染器不可用，/me 将降级为文字摘要', { reason: card.reason });
+  }
+  if (arc.renderer === null) {
+    log.warn('arcaea 渲染器不可用，arcaea 图将降级为文字摘要', { reason: arc.reason });
+  }
 
   const maimaiRenderer = mai.renderer;
   const phigrosRenderer = phi.renderer;
+  const cardRenderer = card.renderer;
+  const arcRenderer = arc.renderer;
 
   return {
     async renderMaimaiB50(input: MaimaiB50RenderInput): Promise<Buffer> {
@@ -128,10 +191,27 @@ export async function createRenderer(
       return phigrosRenderer.renderPhigrosRks(input);
     },
 
+    ...(cardRenderer === null
+      ? {}
+      : {
+          async renderPlayerCard(input: PlayerCardRenderInput): Promise<Buffer> {
+            return cardRenderer.renderPlayerCard(input);
+          },
+        }),
+    ...(arcRenderer === null
+      ? {}
+      : {
+          async renderArcaeaB50(input: ArcaeaB50RenderInput): Promise<Buffer> {
+            return arcRenderer.renderArcaeaB50(input);
+          },
+        }),
+
     async close(): Promise<void> {
       const results = await Promise.allSettled([
         maimaiRenderer?.close() ?? Promise.resolve(),
         phigrosRenderer?.close() ?? Promise.resolve(),
+        cardRenderer?.close() ?? Promise.resolve(),
+        arcRenderer?.close() ?? Promise.resolve(),
       ]);
       for (const result of results) {
         if (result.status === 'rejected') {

@@ -264,8 +264,52 @@ export interface PhigrosRksRenderInput {
   computedAt: string;
 }
 
+/** 名片顶部的圆形游戏图标（素材由调用方给 Buffer，避免渲染器碰网络/文件系统）。 */
+export interface PlayerCardGameIcon {
+  /** 游戏展示名（如 `maimai DX`）。 */
+  name: string;
+  icon: Buffer;
+}
+
+/** 名片里的一张游戏卡（maimai / phigros / arcaea）。 */
+export interface PlayerCardGameSection {
+  game: string;
+  title: string;
+  /** 总分文本（已格式化，如 `15370` / `13.615`）；null 时不展示。 */
+  rating: string | null;
+  subtitle?: string | null;
+  background?: Buffer | null;
+  avatar?: Buffer | null;
+  /** 游戏特定展示字段（2-4 条，调用方决定 label/value）。 */
+  fields: { label: string; value: string }[];
+}
+
+/** `/me` 完整玩家名片。 */
+export interface PlayerCardRenderInput {
+  displayName: string;
+  uid: string | null;
+  bio?: string | null;
+  banner?: Buffer | null;
+  avatar?: Buffer | null;
+  games: PlayerCardGameIcon[];
+  cards: PlayerCardGameSection[];
+  /** 隐私为公开时才传；null/缺省 = 不画二维码。 */
+  qr?: Buffer | null;
+}
+
+/** arcaea B50/B30 海报。 */
+export interface ArcaeaB50RenderInput {
+  profileName: string;
+  potential: number | null;
+  items: GameScore[];
+  computedAt?: string | null;
+}
+
 export interface Renderer {
   renderMaimaiB50(input: MaimaiB50RenderInput): Promise<Buffer>;
   renderPhigrosRks(input: PhigrosRksRenderInput): Promise<Buffer>;
+  /** 可选：未装配名片渲染器时为 undefined，由指令层降级成文字。 */
+  renderPlayerCard?(input: PlayerCardRenderInput): Promise<Buffer>;
+  renderArcaeaB50?(input: ArcaeaB50RenderInput): Promise<Buffer>;
   close(): Promise<void>;
 }

@@ -159,6 +159,20 @@ function defaultProfiles(): Record<string, Record<string, unknown>[]> {
         updatedAt: '2026-10-01T00:00:00Z',
       },
     ],
+    arcaea: [
+      {
+        profileId: 'profile-arc-1',
+        game: 'arcaea',
+        player: { name: 'Fake Arc Player', rating: 12.34, native: { character: 1 } },
+        isPublic: true,
+        origin: 'user',
+        createdByClientId: null,
+        syncCapable: true,
+        lastSyncedAt: '2026-10-01T00:00:00Z',
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+      },
+    ],
     phigros: [
       {
         profileId: 'profile-phi-1',
@@ -389,6 +403,28 @@ export class FakeRankHub {
     }
     if (method === 'POST' && path === '/v1/oauth/revoke') {
       this.handleRevoke(res, form);
+      return;
+    }
+    if (method === 'GET' && path === '/v1/me/profile') {
+      this.sendEnvelope(res, 200, 'common.ok', 'OK', {
+        uid: '100234567',
+        displayName: 'Fake User',
+        bio: '测试账号',
+        avatarUrl: null,
+        bannerUrl: null,
+        isPublic: true,
+        games: [
+          {
+            game: 'maimai',
+            profileId: 'profile-mai-1',
+            playerName: 'Fake Player',
+            rating: 15000,
+            isPublic: true,
+            avatarUrl: null,
+            backgroundUrl: null,
+          },
+        ],
+      });
       return;
     }
     if (method === 'GET' && path === '/v1/oidc/userinfo') {

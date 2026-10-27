@@ -4,6 +4,7 @@
  * 解析只接受**首 token**（dispatcher 已小写）；中文别名不做大小写处理。
  */
 import type { CommandHandler, CommandServices } from './common.js';
+import { arcCommand } from './arc.js';
 import { b50Command } from './b50.js';
 import { bestCommand } from './best.js';
 import { bindCommand } from './bind.js';
@@ -37,6 +38,7 @@ const HANDLERS: ReadonlyMap<string, CommandHandler> = new Map<string, CommandHan
   ['unbind', unbindCommand],
   ['me', meCommand],
   ['b50', b50Command],
+  ['arc', arcCommand],
   ['rks', rksCommand],
   ['best', bestCommand],
   ['score', scoreCommand],
@@ -76,6 +78,12 @@ const ALIASES: ReadonlyMap<string, string> = new Map<string, string>([
   ['maimaib50', 'b50'],
   ['舞萌b50', 'b50'],
   ['成绩', 'b50'],
+  // arc
+  ['arc', 'arc'],
+  ['arcaea', 'arc'],
+  ['b50a', 'arc'],
+  ['arcb50', 'arc'],
+  ['源', 'arc'],
   // rks
   ['rks', 'rks'],
   ['phi', 'rks'],

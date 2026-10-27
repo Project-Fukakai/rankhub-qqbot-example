@@ -19,3 +19,5 @@ export {
   V1_SUCCESS_CODES,
   type ParsedErrorBody,
 } from './errors.js';
+export { describeProfile, normalizeAssetUrl } from './profile.js';
+export type { ProfileView, ProfileField, GameFormatLike } from './profile.js';
