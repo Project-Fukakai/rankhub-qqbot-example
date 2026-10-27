@@ -56,14 +56,14 @@ const GAME_META: Record<CardGame, GameMeta> = {
   maimai: {
     name: 'maimai DX',
     ratingLabel: 'DX rating',
-    iconPaths: ['vendor/card/icons/maimai.png', 'vendor/mai/pic/logo.png'],
+    iconPaths: ['vendor/card/icons/maimai-icon.png', 'vendor/mai/pic/logo.png'],
     color: ['#ff5fa2', '#7b2ff7'],
   },
   phigros: {
     name: 'Phigros',
     ratingLabel: 'Ranking Score',
     iconPaths: [
-      'vendor/card/icons/phigros.png',
+      'vendor/card/icons/phigros-icon.png',
       'vendor/phi/resources/html/otherimg/Phigros_Icon_4.0.0.png',
     ],
     color: ['#39c5ff', '#0a84ff'],
@@ -71,7 +71,7 @@ const GAME_META: Record<CardGame, GameMeta> = {
   arcaea: {
     name: 'Arcaea',
     ratingLabel: 'Potential',
-    iconPaths: ['vendor/card/icons/arcaea.png'],
+    iconPaths: ['vendor/card/icons/arcaea-icon.png'],
     color: ['#b388ff', '#6a3df5'],
   },
 };
@@ -246,11 +246,12 @@ export const meCommand: CommandHandler = async (services, ctx) => {
         fetchImage(item.display.avatarUrl),
         fetchImage(item.display.backgroundUrl),
       ]);
+      // App「我的」页卡片：玩家名大号 + 游戏名/评分体系小字 + 大号 rating + 统计小块。
       sections.push({
         game: item.game,
-        title: meta.name,
+        title: item.profile.player.name?.trim() || meta.name,
         rating: formatRating(item.game, item.display.rating),
-        subtitle: `${meta.ratingLabel} · ${formatTimeAgo(item.profile.updatedAt) ?? formatDateTime(item.profile.updatedAt)}更新`,
+        subtitle: `${meta.name} · ${meta.ratingLabel}`,
         ...(avatar === null ? {} : { avatar }),
         ...(background === null ? {} : { background }),
         fields: item.display.fields.slice(0, 4),

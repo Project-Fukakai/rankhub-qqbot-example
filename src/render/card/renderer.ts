@@ -12,6 +12,7 @@ import {
   DISPLAY_FONT_FAMILY,
   displayFontFaceCss,
   findBrowserExecutable,
+  loadDefaultBackgrounds,
   loadDisplayFont,
   type BrowserLaunchTarget,
 } from './assets.js';
@@ -59,8 +60,11 @@ export class CardRenderer implements PlayerCardRenderer {
   /** 渲染并返回 HTML / 尺寸 / 诊断信息（测试与排查用）。 */
   async renderPlayerCardDetail(input: PlayerCardInput): Promise<PlayerCardRenderResult> {
     const font = loadDisplayFont(this.options.fontsDir);
-    const { html, summary } = buildCardHtml(input, {
+    // App 默认卡片背景（maimai 背景板 / arcaea bg_light）：调用方没传 background 时使用。
+    const defaultBackgrounds = loadDefaultBackgrounds(this.options.backgroundsDir);
+    const { html, summary, defaultBackgroundGames } = buildCardHtml(input, {
       fontFaceCss: displayFontFaceCss(font),
+      ...(Object.keys(defaultBackgrounds).length === 0 ? {} : { defaultBackgrounds }),
     });
 
     const browser = await this.ensureBrowser();
@@ -95,6 +99,7 @@ export class CardRenderer implements PlayerCardRenderer {
           browserSource: pageTarget.source,
           displayFont: font?.family ?? null,
           fontsReady: ready.fontsReady,
+          defaultBackgroundGames,
           scrollWidth: measured.scrollWidth,
           clientWidth: measured.clientWidth,
         },

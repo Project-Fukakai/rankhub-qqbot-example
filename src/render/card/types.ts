@@ -36,6 +36,8 @@ export interface PlayerCardRendererOptions {
   maxImageBytes?: number;
   /** 可选展示字体目录（默认 `vendor/card/fonts`，缺失时回退 `vendor/phi` 的 Aldrich）。 */
   fontsDir?: string;
+  /** 可选 App 默认背景目录（默认 `vendor/card/backgrounds`，缺失时卡片用纯色兜底）。 */
+  backgroundsDir?: string;
 }
 
 /** 渲染结果（`renderPlayerCard` 只返回 buffer，详细版供测试/排查）。 */
@@ -54,6 +56,8 @@ export interface PlayerCardRenderResult {
     games: number;
     cards: number;
     fields: number;
+    /** 没有背景图、走游戏主题渐变的卡片数。 */
+    fallbackBackgrounds: number;
   };
   diagnostics: {
     browserPath: string;
@@ -62,6 +66,8 @@ export interface PlayerCardRenderResult {
     displayFont: string | null;
     /** 展示字体是否真的加载成功（没有字体时恒为 true）。 */
     fontsReady: boolean;
+    /** 用上 App 默认背景素材的游戏（依赖 vendor/card/backgrounds 是否存在）。 */
+    defaultBackgroundGames: string[];
     /** 横向滚动宽度；> 1200 说明有元素把版式撑出去了（测试断言用）。 */
     scrollWidth: number;
     /** 视口 clientWidth（应为 1200）。 */

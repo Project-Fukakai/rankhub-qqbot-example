@@ -7,6 +7,7 @@
  *
  * 产物写入 `test/render/__out__/`（已 gitignore），其中 `card-reference.png` 是完整版式的人工对照图。
  */
+import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,17 +78,26 @@ describe('名片渲染（/me player card）', () => {
     expect(size.height).toBeGreaterThan(1200);
     expect(png.length).toBeGreaterThan(20 * 1024);
     expect(result.width).toBe(size.width);
-    expect(result.height).toBe(size.height);
+    // body 高度可能是小数，PNG 像素高度取整，允许 1px 误差。
+    expect(Math.abs(result.height - size.height)).toBeLessThanOrEqual(1);
 
-    // 素材全部真正用上（banner / 头像 / 3 个图标 / 3 张卡片 / 9 个字段 / 二维码）。
+    // 素材全部真正用上（banner / 头像 / 3 个图标 / 3 张卡片 / 8 个字段 / 二维码）；
+    // maimai 没有背景图，必须走游戏主题渐变兜底。
     expect(result.summary).toEqual({
       hasBanner: true,
       hasAvatar: true,
       hasQr: true,
       games: 3,
       cards: 3,
-      fields: 9,
+      fields: 8,
+      fallbackBackgrounds: 1,
     });
+    // 卡面数据约定：title 是玩家名、subtitle 是「游戏名 · 评分体系」。
+    expect(result.html).toContain('星野 みなと');
+    expect(result.html).toContain('maimai DX · DX rating');
+    expect(result.html).toContain('Phigros · Ranking Score');
+    // 缺背景图时用主题渐变色，而不是留一块纯色。
+    expect(result.html).toContain('radial-gradient(620px 380px');
     // 版式没有横向溢出（body 固定 1200，超长元素应被截断而不是撑宽）。
     expect(result.diagnostics.scrollWidth).toBeLessThanOrEqual(CARD_WIDTH);
     expect(result.diagnostics.clientWidth).toBe(CARD_WIDTH);
@@ -116,9 +126,12 @@ describe('名片渲染（/me player card）', () => {
       games: 0,
       cards: 0,
       fields: 0,
+      fallbackBackgrounds: 0,
     });
-    // 空状态文案存在，说明走的是正常版式而不是报错页。
+    // 空状态文案存在，说明走的是正常版式而不是报错页；UID/bio 缺失走 App 的兜底文案。
     expect(result.html).toContain('还没有公开的游戏档案');
+    expect(result.html).toContain('UID 暂不可用');
+    expect(result.html).toContain('这个人很神秘，还没有填写个人简介。');
     expect(result.html).not.toContain('undefined');
 
     await writeFile(join(OUT_DIR, 'card-minimal.png'), png);
@@ -133,9 +146,11 @@ describe('名片渲染（/me player card）', () => {
     expect(result.summary.hasBanner).toBe(false);
     expect(result.summary.cards).toBe(1);
     expect(result.summary.fields).toBe(0);
-    // rating 缺失的兜底文案 + 用标题占位符替代游戏头像。
-    expect(result.html).toContain('—');
+    expect(result.summary.fallbackBackgrounds).toBe(1);
+    // rating 缺失的兜底文案 + 用玩家名首字替代游戏头像 + 主题渐变背景。
+    expect(result.html).toContain('rating-value--empty');
     expect(result.html).toContain('game-avatar-fallback');
+    expect(result.html).toContain('radial-gradient(620px 380px');
     expect(result.diagnostics.scrollWidth).toBeLessThanOrEqual(CARD_WIDTH);
 
     await writeFile(join(OUT_DIR, 'card-sparse.png'), png);
@@ -210,9 +225,11 @@ describe('名片 HTML 生成（纯函数，不需要浏览器）', () => {
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(html).toContain('&lt;i&gt;x&lt;/i&gt;');
     expect(html).not.toContain('<img src=x');
-    // 字段最多 4 个；空 Buffer 图标回退到首字母占位。
+    // 字段最多 4 个；空 Buffer 图标回退到首字母占位；无背景图走主题渐变。
     expect(summary.fields).toBe(4);
+    expect(summary.fallbackBackgrounds).toBe(1);
     expect(html).toContain('strip-icon-fallback');
+    expect(html).toContain('radial-gradient(620px 380px');
     // 所有素材都是空 Buffer → 不产生任何 data URL（也不会出现半截 src=""）。
     expect(html).not.toContain('data:image');
     expect(html).not.toContain('src=""');

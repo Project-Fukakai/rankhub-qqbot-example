@@ -1,12 +1,27 @@
 /**
- * 名片渲染测试素材：用 @napi-rs/canvas **现场生成**占位图（不依赖 `vendor/` 素材、不触网）。
+ * 名片渲染测试素材：用 @napi-rs/canvas **现场生成**占位图，不触网。
  *
- * 生成的 banner / 头像 / 游戏图标 / 卡片背景 / 二维码都是确定性的（固定随机种子），
- * 保证同一份代码在任何机器上渲染出的版式一致、可对比。
+ * - banner / 头像 / 卡片背景 / 二维码 全部按固定随机种子生成，结果是确定性的；
+ * - 游戏图标优先用 `vendor/card/icons/{game}-icon.png`（仓库已放入，与正式数据同源），
+ *   缺失时回退到现场生成的圆形占位图 —— 保证 CI/新克隆没有 vendor 也能跑。
+ *
+ * 数据约定与 `src/commands/me.ts` 一致：`title` = 玩家名，`subtitle` =「游戏名 · 评分体系」，
+ * `rating` 已格式化为展示字符串，`fields` 是 2-4 个统计小块（labels 取自 `src/rankhub/profile.ts`）。
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { createCanvas } from '@napi-rs/canvas';
 
 import type { PlayerCardInput } from '../../src/render/card/index.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '..', '..');
+const ICON_DIR = join(REPO_ROOT, 'vendor', 'card', 'icons');
+const PHIGROS_COVERS_DIR = join(REPO_ROOT, 'vendor', 'covers', 'phigros');
+/** 固定取这一首的曲绘作为「App 自定义背景」示例（`background_song_id` 的取值来源）。 */
+const PHIGROS_COVER_SONG_ID = 'SURREALISM.Itsuki.0';
 
 /** 确定性 PRNG（mulberry32），用于生成「看起来像二维码」的方块。 */
 function mulberry32(seed: number): () => number {
@@ -53,7 +68,14 @@ export function gradientPng(
 export function avatarPng(size: number, from: string, to: string): Buffer {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
-  const gradient = ctx.createRadialGradient(size * 0.35, size * 0.3, size * 0.05, size / 2, size / 2, size * 0.7);
+  const gradient = ctx.createRadialGradient(
+    size * 0.35,
+    size * 0.3,
+    size * 0.05,
+    size / 2,
+    size / 2,
+    size * 0.7,
+  );
   gradient.addColorStop(0, from);
   gradient.addColorStop(1, to);
   ctx.fillStyle = gradient;
@@ -97,7 +119,44 @@ export function gameIconPng(size: number, from: string, to: string, seed = 3): B
   return canvas.toBuffer('image/png');
 }
 
-/** 伪二维码：白底 + 45% 随机黑块 + 三个定位角，尺寸/密度接近真实二维码。 */
+/**
+ * 游戏图标：优先读 `vendor/card/icons/<game>-icon.png`（仓库内置的测试 fixture），
+ * 缺失时回退到现场生成的占位图。
+ */
+export function gameIcon(game: 'maimai' | 'phigros' | 'arcaea'): Buffer {
+  const vendorPath = join(ICON_DIR, `${game}-icon.png`);
+  if (existsSync(vendorPath)) return readFileSync(vendorPath);
+  const palette: Record<typeof game, [string, string]> = {
+    maimai: ['#ffd0e4', '#ff5f9e'],
+    phigros: ['#c7f3ff', '#33b6e6'],
+    arcaea: ['#e3d4ff', '#7b5cff'],
+  };
+  const [from, to] = palette[game];
+  return gameIconPng(160, from, to);
+}
+
+/**
+ * App 的 phigros 卡片背景 = 玩家选中的曲绘（`phigros_player_card.dart:153-156`）。
+ * 测试从曲绘缓存（`vendor/covers/phigros`，由 fetch-assets-phi 准备）里取固定一首，
+ * 没有缓存时返回 null（卡片走纯色兜底）。
+ */
+export function phigrosCover(): Buffer | null {
+  const indexPath = join(PHIGROS_COVERS_DIR, 'index.json');
+  if (!existsSync(indexPath)) return null;
+  try {
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
+      songs?: Record<string, { file?: string | null }>;
+    };
+    const file = index.songs?.[PHIGROS_COVER_SONG_ID]?.file;
+    if (!file) return null;
+    const path = join(PHIGROS_COVERS_DIR, file);
+    return existsSync(path) ? readFileSync(path) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 伪二维码：白底 + 44% 随机黑块 + 三个定位角，尺寸/密度接近真实二维码。 */
 export function qrPng(size: number, seed = 20261027): Buffer {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
@@ -140,57 +199,61 @@ export function qrPng(size: number, seed = 20261027): Buffer {
   return canvas.toBuffer('image/png');
 }
 
-/** 完整素材：3 个游戏 + 3 张卡片 + banner/头像/背景/二维码，覆盖全部版式分支。 */
+/** 完整素材：3 个游戏 + 3 张卡片 + banner/头像/二维码，覆盖全部版式分支。 */
 export function buildFullCardInput(): PlayerCardInput {
   return {
     displayName: '星野 みなと',
     uid: '100234567',
     bio: '主玩 maimai 与 phigros 的休闲玩家 · 偶尔打 Arcaea · 欢迎来群里对刷',
-    banner: gradientPng(1200, 300, '#25406e', '#7b2d5e', { blobs: true, seed: 11 }),
+    banner: gradientPng(1200, 520, '#25406e', '#7b2d5e', { blobs: true, seed: 11 }),
     avatar: avatarPng(320, '#8fb4ff', '#2b3560'),
     games: [
-      { name: 'maimai', icon: gameIconPng(160, '#ffd0e4', '#ff5f9e', 1) },
-      { name: 'phigros', icon: gameIconPng(160, '#c7f3ff', '#33b6e6', 2) },
-      { name: 'arcaea', icon: gameIconPng(160, '#e3d4ff', '#7b5cff', 3) },
+      { name: 'maimai DX', icon: gameIcon('maimai') },
+      { name: 'Phigros', icon: gameIcon('phigros') },
+      { name: 'Arcaea', icon: gameIcon('arcaea') },
     ],
     cards: [
       {
+        // maimai 的 background 恒为 null（`src/rankhub/profile.ts` 里 name_plate 不是图片）：
+        // 刻意不传背景，让渲染器使用 App 的默认背景板（vendor/card/backgrounds/maimai.png）。
         game: 'maimai',
-        title: 'maimai DX',
+        title: '星野 みなと',
+        subtitle: 'maimai DX · DX rating',
         rating: '15023',
-        subtitle: 'DX rating · 更新于 2026-10-27',
-        background: gradientPng(1200, 260, '#3a2148', '#14253f', { blobs: true, seed: 21 }),
         avatar: avatarPng(240, '#ffd7e8', '#c8317f'),
         fields: [
-          { label: 'B35', value: '14980' },
-          { label: 'B15', value: '15031' },
-          { label: 'DX 分', value: '312' },
-          { label: '最佳达成率', value: '100.5%' },
+          { label: '段位', value: 'SSS' },
+          { label: 'CLASS', value: '11' },
+          { label: '星级', value: '★ 3' },
         ],
       },
       {
         game: 'phigros',
-        title: 'Phigros',
+        title: '星野 みなと',
+        subtitle: 'Phigros · Ranking Score',
         rating: '15.4321',
-        subtitle: 'Ranking Score · 更新于 2026-10-27',
-        background: gradientPng(1200, 260, '#10394b', '#101d36', { blobs: true, seed: 22 }),
+        // App 里 phigros 背景是玩家选的曲绘；没有曲绘缓存时用生成图兜底，保证 CI 也能跑。
+        background:
+          phigrosCover() ??
+          gradientPng(1040, 416, '#0f3548', '#10131d', { blobs: true, seed: 22 }),
         avatar: avatarPng(240, '#c9f5ff', '#127ba3'),
         fields: [
-          { label: 'RKS', value: '15.4321' },
-          { label: '最高定数', value: '15.8' },
-          { label: 'phi', value: '3' },
+          { label: '课题模式', value: '白 15' },
+          { label: '游戏版本', value: 'v3.16.0' },
         ],
       },
       {
         game: 'arcaea',
-        title: 'Arcaea',
+        title: '星野 みなと',
+        subtitle: 'Arcaea · Potential',
         rating: '12.34',
-        subtitle: 'Potential · 更新于 2026-10-27',
-        background: gradientPng(1200, 260, '#2d2150', '#131427', { blobs: true, seed: 23 }),
+        // 不传背景：渲染器使用 App 内置的 assets/arcaea/bg_light.png（vendor/card/backgrounds/arcaea.png）；
+        // 玩家自定义 nameplate 时，/me 会把 nameplate 作为 background 传进来。
         avatar: avatarPng(240, '#e8dcff', '#4b2f9e'),
         fields: [
-          { label: 'Potential', value: '12.34' },
-          { label: '最高定数', value: '10+' },
+          { label: 'Best 30 均值', value: '12.10' },
+          { label: 'Best 50 均值', value: '11.98' },
+          { label: '搭档', value: '光' },
         ],
       },
     ],
@@ -208,7 +271,7 @@ export function buildMinimalCardInput(): PlayerCardInput {
   };
 }
 
-/** 缺可选素材但有卡片：rating 为 null、无背景/头像、字段为空。 */
+/** 缺可选素材但有卡片：rating 为 null、无背景/头像、字段为空，全部走兜底。 */
 export function buildSparseCardInput(): PlayerCardInput {
   return {
     displayName: 'Sparse Player',
@@ -216,11 +279,11 @@ export function buildSparseCardInput(): PlayerCardInput {
     bio: null,
     banner: null,
     avatar: null,
-    games: [{ name: 'phigros', icon: gameIconPng(128, '#99e7ff', '#0f6d8c') }],
+    games: [{ name: 'Phigros', icon: gameIcon('phigros') }],
     cards: [
       {
         game: 'phigros',
-        title: 'Phigros',
+        title: 'Sparse Player',
         rating: null,
         fields: [],
       },
@@ -236,13 +299,13 @@ export function buildLongTextCardInput(): PlayerCardInput {
     displayName: long,
     uid: '1234567890'.repeat(4),
     bio: '很长的个人简介'.repeat(40),
-    games: [{ name: 'maimai'.repeat(6), icon: gameIconPng(96, '#ffd0e4', '#c8317f') }],
+    games: [{ name: 'maimai'.repeat(6), icon: gameIcon('maimai') }],
     cards: [
       {
         game: 'maimai',
         title: long,
+        subtitle: '很长的副标题'.repeat(10),
         rating: '15023150231502315023',
-        subtitle: '副标题'.repeat(20),
         fields: [
           { label: '标签'.repeat(10), value: '值'.repeat(20) },
           { label: 'B35', value: '14980' },
