@@ -6,6 +6,7 @@
  * 渲染层会从 `native` 摊平 song_id/score/potential/clear_type 等字段。
  */
 import { prefetchArcaeaCovers } from '../rankhub/arc-assets.js';
+import { ArcaeaSongTitleCache, fetchArcaeaSongTitles } from '../rankhub/arc-songlist.js';
 
 import type { CommandHandler } from './common.js';
 import {
@@ -20,6 +21,24 @@ import {
 } from './common.js';
 
 const MAX_ITEMS = 50;
+
+/**
+ * 曲名目录缓存（进程级）：v1 的 arcaea 成绩没有 `songName`，用公开的官方 songlist 补。
+ * 见 `src/rankhub/arc-songlist.ts`。
+ */
+let titleCache: ArcaeaSongTitleCache | null = null;
+
+function getTitleCache(services: Parameters<CommandHandler>[0]): ArcaeaSongTitleCache {
+  if (titleCache === null) {
+    titleCache = new ArcaeaSongTitleCache(() =>
+      fetchArcaeaSongTitles({
+        apiBase: services.config.RANKHUB_API_BASE,
+        logger: services.logger,
+      }),
+    );
+  }
+  return titleCache;
+}
 
 export const arcCommand: CommandHandler = async (services, ctx) => {
   await withAuthorized(services, ctx, async ({ binding, accessToken }) => {
@@ -56,21 +75,26 @@ export const arcCommand: CommandHandler = async (services, ctx) => {
       return;
     }
 
+    // 曲名来自官方 songlist（v1 不返回 songName）；先补标题再预取曲绘。
+    const songTitles = await timed(services, 'fetchArcaeaSongTitles', () => getTitleCache(services).get());
+
     // 曲绘来源对齐 App：按 song_id 从 RankHub 资源 CDN 取官方 jacket（本地 best-posters 仅兜底）。
     const covers = await timed(services, 'prefetchArcaeaCovers', () =>
       prefetchArcaeaCovers(items.map((item) => item.songId)),
     );
     const itemsWithCovers = items.map((item) => ({
       ...item,
+      songName: item.songName ?? songTitles.titles.get(item.songId) ?? null,
       coverUrl: covers.get(item.songId) ?? null,
     }));
 
     services.logger.info('Arcaea 曲目映射采样（排查曲名/曲绘）', {
-      sample: items.slice(0, 5).map((item) => ({
+      sample: itemsWithCovers.slice(0, 5).map((item) => ({
         songId: item.songId,
         songName: item.songName,
-        levelIndex: item.levelIndex,
+        hasCover: typeof item.coverUrl === 'string' && item.coverUrl.startsWith('data:'),
       })),
+      titles: songTitles.titles.size,
       covers: covers.size,
       total: items.length,
     });
