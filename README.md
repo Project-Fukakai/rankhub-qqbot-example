@@ -9,6 +9,8 @@
 
 ![maimai b50](docs/images/maimai-b50.png)
 
+![玩家名片](docs/images/me-card.png)
+
 ![phigros b19](docs/images/phigros-b19.png)
 
 ## 能做什么
@@ -19,7 +21,9 @@
 | `/bind [UID]` | 绑定 RankHub：私聊直接 `/bind`，群聊 `/bind <UID>`；扫机器人发的二维码在 App 内确认 |
 | `/unbind` | 撤销令牌并删除本地绑定 |
 | `/me` | 已绑定身份与各游戏档案摘要 |
+| `/me` | **玩家名片**：账号头像/背景 + 已绑定游戏图标条 + maimai/phigros/arcaea 卡片 + 公开账号二维码 |
 | `/b50` | maimai B50 图片（照搬 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 的绘制） |
+| `/arc` | Arcaea B50 海报（移植 [best-posters](https://github.com/Project-Fukakai) 的 arcaea 版式） |
 | `/rks` | phigros RKS / b19 图片（照搬 [phi-plugin](https://github.com/Catrong/phi-plugin) 的 b19 模板） |
 | `/best <game>` | 任意游戏最佳成绩（文字） |
 | `/score [game] <关键词>` | 在本人成绩里按曲名模糊查询（文字） |
@@ -41,6 +45,8 @@ src/
   store/      node:sqlite + AES-256-GCM（refresh/access token 加密落库）
   render/phi/ phi-plugin b19 模板 + Playwright 截图
   render/mai/ maimaiDX B50 绘制（PIL → @napi-rs/canvas 移植）
+  render/card/ 玩家名片（HTML + Playwright）
+  render/arc/ Arcaea B50 海报（best-posters 版式）
   commands/   指令实现
   bot/        装配与事件管线
 scripts/      素材拉取/校验、live 冒烟

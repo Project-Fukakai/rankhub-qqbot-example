@@ -64,6 +64,7 @@ POST {AUTH}/v1/oauth/token
 | `GET {API}/v1/games/{game}/profiles` | 档案列表（`profileId`、玩家名、rating、更新时间） | 同上 |
 | `GET {API}/v1/games/{game}/profiles/{id}/bests` | B50/B30/phi 分桶与总分（`buckets` + `totals`） | 同上 |
 | `GET {API}/v1/games/{game}/profiles/{id}/scores` | 逐曲成绩，`limit`/`cursor`/`sortBy`/`order` 分页 | `src/commands/score.ts` |
+| `GET {API}/v1/me/profile` | 账号资料（uid/头像/背景/隐私）+ 各游戏档案摘要；名片与二维码用 | `src/rankhub/client.ts` / `src/commands/me.ts` |
 
 响应统一为 `{code, message, data, requestId}` envelope；分页用 `nextCursor` + `hasMore`。
 错误映射见 `src/rankhub/errors.ts`：`401 unauthorized`、`403 firstPartyOnly`、
@@ -88,15 +89,21 @@ RankHub 的 maimai 成绩字段（线上实测）：
 phigros 侧：`buckets.phi` 与 `buckets.best30` 可能重叠，best 区需要剔除 phi 曲目，
 否则 b19 同一首歌会出现两次（`src/commands/rks.ts`）。
 
-## 5. 渲染复用
+## 5. 玩家名片与二维码
+
+- `/me` 名片由 `GET /v1/me/profile`（账号级）+ 三个游戏的 profiles 组成；
+- 二维码内容与 App 一致：`rankhub://user/<uid>?ref=qrcode`，仅在 `isPublic` 时渲染；
+- 头像/背景的资产 URL 规则镜像 App（`describeProfile()`，见 `docs/research/profile-model.md`）。
+
+## 6. 渲染复用
 
 - phigros：直接复用 **phi-plugin** 的 b19 HTML/CSS/art-template，Node 端用
   `playwright-core` + Chromium 截图，`file://` 加载本地字体/曲绘；
 - maimai：把 **maimaiDX** 的 PIL 绘制移植到 `@napi-rs/canvas`（纯 Node，无 Python 依赖），
   逐像素与 Python 参考实现比对验收；
-- 曲绘缓存：`vendor/mai/cover/<songId % 10000>.png`、`vendor/phi/...`。
+- 曲绘缓存：`vendor/mai/cover/<songId % 10000>.png`、`vendor/phi/...`、`vendor/arc/covers`（Arcaea）。
 
-## 6. 证据
+## 7. 证据
 
 - 线上探测：`evidence/qqbot/device-grant-bug-20261027.md`、
   `evidence/qqbot/device-page-bug-20261027.md`、`evidence/qqbot/bind-qr-flow-probe-20261027.md`
