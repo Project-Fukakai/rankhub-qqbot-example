@@ -93,6 +93,8 @@ describe('phigros b19 渲染（phi-plugin 模板）', () => {
     expect(result.data.b19_list).toHaveLength(30);
     expect(result.data.b19_list[0]?.num).toBe(1);
     expect(result.data.b19_list[29]?.num).toBe(30);
+    // Phi3 + B27 = 前 27 张普通卡 + OVER FLOW 分隔（第 28 张起进入溢出区）。
+    expect(result.html).toContain('OVER FLOW');
     // 保留上游模板的作者/版权信息。
     expect(result.html).toContain('Phi-Plugin');
     expect(result.html).toContain('Phi-Plugin不是Phigros官方项目');

@@ -22,6 +22,7 @@ import { renderUserQr } from '../bot/qr.js';
 import type { GameProfile, PlayerCardGameIcon, PlayerCardGameSection } from '../contracts/index.js';
 import { fetchImage } from '../rankhub/assets.js';
 import { describeProfile } from '../rankhub/index.js';
+import { formatTimeAgo } from '../util/timeago.js';
 
 import type { CommandHandler, CommandServices } from './common.js';
 import {
@@ -249,7 +250,7 @@ export const meCommand: CommandHandler = async (services, ctx) => {
         game: item.game,
         title: meta.name,
         rating: formatRating(item.game, item.display.rating),
-        subtitle: `${meta.ratingLabel} · 更新于 ${formatDateTime(item.profile.updatedAt)}`,
+        subtitle: `${meta.ratingLabel} · ${formatTimeAgo(item.profile.updatedAt) ?? formatDateTime(item.profile.updatedAt)}更新`,
         ...(avatar === null ? {} : { avatar }),
         ...(background === null ? {} : { background }),
         fields: item.display.fields.slice(0, 4),

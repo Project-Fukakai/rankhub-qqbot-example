@@ -188,7 +188,8 @@ describe('RankHub /v1/games 客户端', () => {
   });
 
   it('404 → not_found', async () => {
-    await expect(client.listProfiles(accessToken, 'arcaea')).rejects.toMatchObject({
+    // 用一个 fake 里没有档案的游戏验证 404（arcaea 现在有默认档案，不能再当 404 样本）。
+    await expect(client.listProfiles(accessToken, 'chunithm')).rejects.toMatchObject({
       code: 'not_found',
       status: 404,
     });

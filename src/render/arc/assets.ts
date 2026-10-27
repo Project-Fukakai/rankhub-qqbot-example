@@ -199,14 +199,32 @@ const COVER_FILE_PATTERN = /^[A-Za-z0-9._-]+\.(?:jpe?g|png|webp)$/i;
  *
  * 返回绝对路径；文件不存在返回 null（调用方用占位图，不抛异常）。
  */
+/** 归一化曲名/曲 id 用于匹配：小写、去掉空白与标点（保留中日韩字符）。 */
+export function normalizeSongKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s'`"!?.,:;()\[\]{}\-_/\\&+~@#$%^*=<>.|]/g, '');
+}
+
+/** 按曲名在索引里找条目（RankHub 的 `song_id` 可能是 uuid，与 Arcaea 官方字符串 id 不一致）。 */
+export function lookupEntryByTitle(assets: ArcAssets, title: string): ArcCoverEntry | undefined {
+  const target = normalizeSongKey(title);
+  if (target === '') return undefined;
+  for (const entry of Object.values(assets.index.songs)) {
+    if (entry.title && normalizeSongKey(entry.title) === target) return entry;
+  }
+  return undefined;
+}
+
 export function resolveCoverFile(
   assets: ArcAssets,
-  input: { songId: string; coverFile?: string | null },
+  input: { songId: string; title?: string | null; coverFile?: string | null },
 ): string | null {
   const candidates: string[] = [];
   const explicit = input.coverFile?.trim();
   if (explicit && COVER_FILE_PATTERN.test(explicit)) candidates.push(explicit);
-  const entry = assets.index.songs[input.songId];
+  const direct = assets.index.songs[input.songId] ?? assets.index.songs[normalizeSongKey(input.songId)];
+  const entry = direct ?? (input.title ? lookupEntryByTitle(assets, input.title) : undefined);
   if (entry?.file && COVER_FILE_PATTERN.test(entry.file)) candidates.push(entry.file);
   for (const name of candidates) {
     const full = join(assets.coversDir, name);

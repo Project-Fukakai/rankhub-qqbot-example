@@ -32,6 +32,7 @@ import {
   formatPotential,
   formatScore,
   loadArcAssets,
+  resolveCoverFile,
   type ArcAssets,
   type ArcaeaB50RenderInput,
   type ArcaeaScore,
@@ -423,6 +424,65 @@ describe('arcaea 海报数据映射（纯函数）', () => {
     expect(card.gradeSrText).toBe('FULL RECALL');
     expect(card.secondaryValue).toBe('P 1000 (+950) / F 5 / L 0');
     expect(data.diagnostics.coversFound).toBe(1);
+  });
+
+  it('数字难度（RankHub 口径 0/1/2/3/4）还原成 PST/PRS/FTR/BYD/ETR', () => {
+    const data = buildArcTemplateData(
+      {
+        profileName: 'Hikari',
+        potential: 12.3,
+        computedAt: FIXED_COMPUTED_AT,
+        items: [
+          { songId: 'testify', score: 10_000_000, difficulty: '3', levelIndex: 3, constant: 11.5 },
+          { songId: 'testify', score: 9_900_000, difficulty: '2', levelIndex: 2, constant: 11.0 },
+          { songId: 'testify', score: 9_800_000, difficulty: '0', levelIndex: 0, constant: 5.0 },
+        ],
+      },
+      assets,
+      { now: FIXED_NOW },
+    );
+    expect(data.cards.map((card) => card.difficulty)).toEqual(['BYD', 'FTR', 'PST']);
+    // 名称不是下标数字。
+    for (const card of data.cards) expect(card.difficulty).not.toMatch(/^\d+$/);
+  });
+
+  it('songId 是 uuid 时按曲名回落到曲绘，不再缺图', () => {
+    // 取索引里任意一首已知曲目，用它的标题 + 假 uuid 查询。
+    const entry = Object.entries(assets.index.songs)[0]!;
+    const [, song] = entry;
+    const byTitle = resolveCoverFile(assets, { songId: '00000000-0000-0000-0000-000000000000', title: song.title });
+    expect(byTitle).not.toBeNull();
+    expect(byTitle!.endsWith('.jpg')).toBe(true);
+  });
+
+  it('playTime 为毫秒时间戳时展示相对时间（3d/5h），不是原串', () => {
+    const now = Date.parse('2026-10-27T12:00:00Z');
+    const data = buildArcTemplateData(
+      {
+        profileName: 'Hikari',
+        potential: 12.3,
+        computedAt: FIXED_COMPUTED_AT,
+        items: [
+          {
+            songId: 'testify',
+            score: 10_000_000,
+            difficulty: '2',
+            levelIndex: 2,
+            playTime: new Date(now - 3 * 86_400_000).toISOString(),
+          },
+          {
+            songId: 'testify',
+            score: 9_900_000,
+            difficulty: '2',
+            levelIndex: 2,
+            playTime: new Date(now - 5 * 3_600_000).toISOString(),
+          },
+        ],
+      },
+      assets,
+      { now: new Date(now) },
+    );
+    expect(data.cards.map((card) => card.playTime)).toEqual(['3d', '5h']);
   });
 
   it('模板数据：名次/难度/等级/曲名回落与索引一致', () => {

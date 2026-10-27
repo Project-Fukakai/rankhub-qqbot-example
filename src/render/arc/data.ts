@@ -15,6 +15,7 @@
  */
 import type { GameScore } from '../../contracts/index.js';
 import type { ArcAssets } from './assets.js';
+import { formatTimeAgoCompact } from '../../util/timeago.js';
 import { lookupSong, resolveCoverFile, toFileUrl } from './assets.js';
 import type { ArcaeaB50RenderInput, ArcaeaRenderItem, ArcaeaScore } from './types.js';
 
@@ -293,7 +294,15 @@ export function resolveDifficulty(item: ArcaeaScore, assets: ArcAssets): Resolve
     slot = item.levelIndex % DIFFICULTY_NAMES.length;
   }
 
+  // RankHub 的 arcaea `difficulty` 是 **数字**（0 PST / 1 PRS / 2 FTR / 3 BYD / 4 ETR），
+  // v1 里以字符串下发（`arcaea.adapter.ts:188`）。直接当名字会渲染成 "0"/"2"，
+  // 所以先按数字还原成难度名，再回退到索引。
   let name = item.difficulty?.trim().toUpperCase() ?? '';
+  const numeric = /^\d+$/.test(name) ? Number(name) : null;
+  if (numeric !== null) {
+    slot = numeric % DIFFICULTY_NAMES.length;
+    name = DIFFICULTY_NAMES[slot] ?? '';
+  }
   if (!name && slot != null) name = DIFFICULTY_NAMES[slot] ?? '';
   if (!name) {
     // 索引里该曲只有一档难度时直接借用（best-posters 每首歌正好一条谱面）。
@@ -409,13 +418,22 @@ function resolveItem(item: ArcaeaScore, assets: ArcAssets, fallbackTitle: string
 }
 
 /** 一张卡片的数据（`js/app.js:117-125` 的 arcaea 分支）。 */
-function buildCard(resolved: ResolvedItem, rank: number, assets: ArcAssets): ArcTemplateCard {
+function buildCard(resolved: ResolvedItem, rank: number, assets: ArcAssets, nowMs: number): ArcTemplateCard {
   const { item, difficulty, title, scoreRank, rating } = resolved;
-  const coverPath = resolveCoverFile(assets, { songId: item.songId, coverFile: item.coverFile ?? null });
+  const coverPath = resolveCoverFile(assets, {
+    songId: item.songId,
+    title,
+    coverFile: item.coverFile ?? null,
+  });
   const coverMissing = coverPath === null;
   const grade = deriveGrade(item, scoreRank);
   const rankLabel = `B${String(rank).padStart(2, '0')}`;
-  const playTime = item.playTime?.trim() || formatPlayTime(item.playMinutes);
+  // `time_played` 是**毫秒时间戳**（rankhub_net write-guard/hard-bounds.ts:143），
+  // 即"最后游玩时间"；海报 TIME 列展示相对时间（`3d` / `5h`），解析失败再退回原串。
+  const rawPlayTime = item.playTime?.trim();
+  const playTime = rawPlayTime
+    ? (formatTimeAgoCompact(rawPlayTime, nowMs) ?? rawPlayTime)
+    : formatPlayTime(item.playMinutes);
 
   return {
     rankLabel,
@@ -481,7 +499,8 @@ export function buildArcTemplateData(
         (right.item.levelIndex ?? -1) - (left.item.levelIndex ?? -1),
     )
     .slice(0, BEST_VISIBLE);
-  const cards = resolved.map((entry, index) => buildCard(entry, index + 1, assets));
+  const nowMs = (options.now ?? new Date()).getTime();
+  const cards = resolved.map((entry, index) => buildCard(entry, index + 1, assets, nowMs));
 
   const ratings = resolved
     .map((entry) => entry.rating)
