@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+
+# 本地凭据（QQ AppSecret、RankHub client_secret、加密密钥）
+.env
+.env.local
+.env.*.local
+
+# 运行数据与素材缓存
+data/
+vendor/
+.venv/
+.venv-ref/
+*.log
+tmp/
+
+# 渲染产物
+test/render/__out__/

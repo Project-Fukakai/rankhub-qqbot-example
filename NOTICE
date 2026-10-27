@@ -1,0 +1,22 @@
+rankhub-qqbot
+Copyright (C) 2026 rankhub-qqbot contributors
+
+本项目的 phigros 图片渲染复用/改编自 phi-plugin（GPL-3.0）：
+  - 项目：https://github.com/Catrong/phi-plugin
+  - 许可：GNU General Public License v3.0
+  - 复用内容：resources/html/b19/**、resources/html/common/**（字体、layout、theme）、
+    resources/html/otherimg/**（评级图标）、resources/html/avatar/**（默认头像）及渲染数据映射。
+  - phi-plugin 的版权归其作者所有。相应模板与素材在 GPL-3.0 下分发。
+
+本项目的 maimai b50 图片渲染移植/复用自 maimaiDX（MIT）：
+  - 项目：https://github.com/Yuri-YuzuChaN/maimaiDX
+  - 许可：MIT License，Copyright (c) 2021 Yuri-YuzuChaN
+  - 复用内容：core/image/best50.py、core/image/base.py、core/image/assets.py、
+    core/image/tools.py 的绘制坐标与逻辑，以及 maimaiDX 静态资源包中的界面素材。
+  - 按 maimaiDX README 要求，图片中的设计署名（Designed by Yuri-YuzuChaN & BlueDeer233）
+    必须保留，不得移除。
+
+游戏曲绘、字体、界面素材的版权归各游戏发行商/原作者所有，仅用于个人查分展示。
+若你是权利人并希望停止使用某素材，请提交 issue。
+
+phigros 曲绘缓存来自 RankHub 公共资源服务 https://static.rankhub.cc/phigros/asset/**。
