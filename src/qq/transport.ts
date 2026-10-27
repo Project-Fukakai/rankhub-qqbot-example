@@ -146,6 +146,11 @@ export class QQTTransport implements QQTransport {
         messageSeq,
       });
     }
+    this.logger.info('QQ 文本已发送', {
+      kind: ctx.event.kind,
+      messageId: ctx.event.messageId,
+      chunks: chunks.length,
+    });
   }
 
   async replyImage(ctx: ReplyContext, image: Buffer, filename = 'rankhub.png'): Promise<void> {
@@ -156,6 +161,13 @@ export class QQTTransport implements QQTransport {
       filename,
       messageId: ctx.event.messageId,
       messageSeq,
+    });
+    this.logger.info('QQ 图片已发送', {
+      kind: ctx.event.kind,
+      messageId: ctx.event.messageId,
+      messageSeq,
+      bytes: image.length,
+      filename,
     });
   }
 
