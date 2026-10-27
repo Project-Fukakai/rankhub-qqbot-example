@@ -254,7 +254,9 @@ export function fromGameScore(item: GameScore): ArcaeaScore {
     rating: item.rating ?? nativeNumber(native, 'potential', 'rating'),
     level: item.level,
     levelIndex: item.levelIndex,
-    difficulty: item.difficulty ?? item.type,
+    // 后端 v1 已下发 difficultyName（PST…INS）与 ratingClassAlias，优先用它，避免自维护映射。
+    difficulty: nativeString(native, 'difficultyName') ?? item.difficulty ?? item.type,
+    ratingClassAlias: nativeNumber(native, 'ratingClassAlias'),
     constant: nativeNumber(native, 'constant'),
     clearType: nativeNumber(native, 'clear_type', 'clearType'),
     scoreRank: item.rank ?? nativeString(native, 'rank'),
@@ -288,7 +290,7 @@ interface ResolvedDifficulty {
  * 等级文本优先 item.level，其次索引里的 level，最后用定数补齐（`js/app.js:89`）。
  */
 export function resolveDifficulty(item: ArcaeaScore, assets: ArcAssets): ResolvedDifficulty {
-  const entry = lookupSong(assets, item.songId);
+  const entry = lookupSong(assets, item.songId, item.title);
   const entryLevels = entry ? Object.values(entry.levels) : [];
 
   let slot: number | null = null;
@@ -411,7 +413,7 @@ interface ResolvedItem {
 /** 解析一条成绩：难度 / 曲名 / 评级 / 有效 PTT。 */
 function resolveItem(item: ArcaeaScore, assets: ArcAssets, fallbackTitle: string): ResolvedItem {
   const difficulty = resolveDifficulty(item, assets);
-  const entry = lookupSong(assets, item.songId);
+  const entry = lookupSong(assets, item.songId, item.title);
   const title = (item.title?.trim() || entry?.title || fallbackTitle).trim();
   const scoreRank = (item.scoreRank?.trim().toUpperCase() || arcaeaGrade(item.score)).trim();
   // RankHub 给出的 PTT 优先；缺失时用「定数 + 分数」按同一公式兜底，而不是直接显示 —。

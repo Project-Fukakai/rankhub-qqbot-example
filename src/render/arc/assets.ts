@@ -234,8 +234,19 @@ export function resolveCoverFile(
 }
 
 /** 索引里的曲目信息（曲名/等级/定数兜底用）；没有则 undefined。 */
-export function lookupSong(assets: ArcAssets, songId: string): ArcCoverEntry | undefined {
-  return assets.index.songs[songId];
+export function lookupSong(
+  assets: ArcAssets,
+  songId: string,
+  title?: string | null,
+): ArcCoverEntry | undefined {
+  const direct = assets.index.songs[songId];
+  if (direct !== undefined) return direct;
+  // RankHub 的 song id 与 best-posters 索引键不一定逐字一致（大小写/下划线/连字符差异），
+  // 再按归一化 id 与曲名匹配；都不中才返回 undefined（渲染层回落 TRACK n / 占位图）。
+  const normalized = assets.index.songs[normalizeSongKey(songId)];
+  if (normalized !== undefined) return normalized;
+  if (title) return lookupEntryByTitle(assets, title);
+  return undefined;
 }
 
 /** 素材概况，供日志与测试断言。 */

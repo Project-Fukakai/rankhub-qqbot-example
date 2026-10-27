@@ -32,6 +32,7 @@ import {
   formatPotential,
   formatScore,
   loadArcAssets,
+  lookupSong,
   resolveCoverFile,
   type ArcAssets,
   type ArcaeaB50RenderInput,
@@ -462,6 +463,17 @@ describe('arcaea 海报数据映射（纯函数）', () => {
       { now: FIXED_NOW },
     );
     expect(data.cards.map((card) => card.difficulty)).toEqual(['INS', 'BYD', 'ETR']);
+  });
+
+  it('songId 与索引键大小写/下划线不一致时仍能取到曲名（不再显示 TRACK n）', () => {
+    const [key, entry] = Object.entries(assets.index.songs)[0]!;
+    expect(lookupSong(assets, key.toUpperCase())?.title).toBe(entry.title);
+    expect(lookupSong(assets, `${key}_x`)?.title).toBeUndefined();
+    // 通过曲名兜底（uuid/异形 id 场景）。
+    expect(lookupSong(assets, '0000-uuid', entry.title)?.title).toBe(entry.title);
+    // 归一化：去掉空格/下划线后能匹配。
+    const spaced = entry.title.replace(/\s+/g, '_').toUpperCase();
+    expect(lookupSong(assets, spaced, entry.title)?.title).toBe(entry.title);
   });
 
   it('songId 是 uuid 时按曲名回落到曲绘，不再缺图', () => {
