@@ -426,7 +426,7 @@ export class QQGateway {
         this.backoffResolve = null;
         resolve();
       }, delayMs);
-      this.backoffTimer.unref?.();
+      // 不要 unref：这是空闲时唯一保活的重连定时器，unref 会让进程静默退出（exit 0）。
     });
   }
 
