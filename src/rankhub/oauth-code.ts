@@ -28,8 +28,8 @@ export interface AuthorizationRequestOptions {
   redirectUri: string;
   scope: string;
   state: string;
-  /** 可选：给 App 的提示（如 QQ 昵称）。 */
-  target?: Record<string, unknown>;
+  /** 可选：预选账号（服务端只接受 `{type: uid|phone|email, value}`）。 */
+  target?: { type: 'uid' | 'phone' | 'email'; value: string };
 }
 
 export interface AuthorizationRequest {

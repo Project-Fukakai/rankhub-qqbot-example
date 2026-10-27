@@ -62,12 +62,26 @@ describe('E2E 指令管线', () => {
   );
 
   it(
+    '群聊 /bind 不带 UID → 提示需要 UID，不创建授权请求',
+    async () => {
+      harness = await startHarness();
+      harness.emitGroup('/bind', 'msg-bind-nouid-1');
+      const messages = await harness.waitForMessages('msg-bind-nouid-1', 1);
+      const content = String(messages[0]!.body.content);
+      expect(content).toContain('RankHub UID');
+      expect(content).toContain('/bind <UID>');
+      expect(harness.fakeRankHub.lastAuthorization()).toBeNull();
+    },
+    15_000,
+  );
+
+  it(
     '/bind：二维码 + 模拟 App 确认 → msg_seq=3 成功文案 + 加密入库',
     async () => {
       const manual = createManualSleep();
       harness = await startHarness({ sleep: manual.sleep });
 
-      harness.emitGroup('/bind', 'msg-bind-1');
+      harness.emitGroup('/bind 10001', 'msg-bind-1');
       const firstMessages = await harness.waitForMessages('msg-bind-1', 1);
       const first = firstMessages[0]!;
       expect(first.body.msg_seq).toBe(1);
@@ -115,7 +129,7 @@ describe('E2E 指令管线', () => {
     async () => {
       const manual = createManualSleep();
       harness = await startHarness({ sleep: manual.sleep });
-      harness.emitGroup('/bind', 'msg-bind-denied-1');
+      harness.emitGroup('/bind 10001', 'msg-bind-denied-1');
       await harness.waitForMessages('msg-bind-denied-1', 1);
       const authorization = harness.fakeRankHub.lastAuthorization()!;
 
@@ -134,7 +148,7 @@ describe('E2E 指令管线', () => {
     async () => {
       const manual = createManualSleep();
       harness = await startHarness({ sleep: manual.sleep });
-      harness.emitGroup('/bind', 'msg-bind-expired-1');
+      harness.emitGroup('/bind 10001', 'msg-bind-expired-1');
       await harness.waitForMessages('msg-bind-expired-1', 1);
       const authorization = harness.fakeRankHub.lastAuthorization()!;
 
@@ -155,7 +169,7 @@ describe('E2E 指令管线', () => {
       let clock = 1_700_000_000_000;
       harness = await startHarness({ sleep: manual.sleep, now: () => clock });
 
-      harness.emitGroup('/bind', 'msg-bind-timeout-1');
+      harness.emitGroup('/bind 10001', 'msg-bind-timeout-1');
       await harness.waitForMessages('msg-bind-timeout-1', 1);
       expect(harness.fakeRankHub.lastAuthorization()).not.toBeNull();
 

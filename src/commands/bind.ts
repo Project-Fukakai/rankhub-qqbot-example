@@ -199,6 +199,29 @@ async function pollUntilApproved(
 
 export const bindCommand: CommandHandler = async (services, ctx) => {
   const openid = ctx.event.userOpenid;
+
+  // 服务端 target 只接受 {type: uid|phone|email, value}；群聊场景需要用它指定要授权的
+  // RankHub 账号（私聊可省略）。这里只支持 uid：QQ 侧拿不到手机号/邮箱。
+  let target: { type: 'uid'; value: string } | undefined;
+  const uidArg = ctx.args.trim();
+  if (ctx.event.kind === 'group_at') {
+    if (!/^[0-9]{1,20}$/.test(uidArg)) {
+      await sendText(
+        services,
+        ctx,
+        [
+          '群聊绑定需要带上你的 RankHub UID：',
+          '/bind <UID>',
+          '（UID 在 RankHub App 的「我的」页可以找到；私聊直接 /bind 即可。）',
+        ].join('\n'),
+      );
+      return;
+    }
+    target = { type: 'uid', value: uidArg };
+  } else if (/^[0-9]{1,20}$/.test(uidArg)) {
+    target = { type: 'uid', value: uidArg };
+  }
+
   const existing = await services.store.getByQqUser(openid);
   if (existing !== null && existing.status === 'active') {
     await sendText(
@@ -218,7 +241,7 @@ export const bindCommand: CommandHandler = async (services, ctx) => {
         redirectUri: services.config.RANKHUB_REDIRECT_URI,
         scope: services.config.RANKHUB_SCOPES,
         state,
-        target: { source: 'qq', kind: ctx.event.kind },
+        ...(target === undefined ? {} : { target }),
       }),
     );
   } catch (error) {

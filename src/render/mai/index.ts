@@ -152,20 +152,26 @@ function normalizeSync(fs: string | null): string | null {
 }
 
 function toRow(score: GameScore, songData: MaiSongData): MaiB50Row | null {
-  const songId = normalizeSongId(score);
+  const baseSongId = normalizeSongId(score);
   const levelIndex = normalizeLevelIndex(score);
-  if (songId == null || levelIndex == null) return null;
+  if (baseSongId == null || levelIndex == null) return null;
+
+  // 谱面索引（data.json）里 DX 谱的 song_id 是 `id + 10000`；RankHub 的 songId 是基础 id。
+  // 必须在查表前归一，否则 level_value / maxDxScore 全部查不到（画面上表现为 `? -> rating`、`3019/?`）。
+  const type = normalizeType(score, baseSongId);
+  const songId = type === 'DX' && baseSongId < 10000 ? baseSongId + 10000 : baseSongId;
 
   const achievements = num(score.achievements) ?? 0;
-  const levelValue = num(score.level) ?? songData.levelValue(songId, levelIndex);
+  // 注意：契约里的 `level` 是展示串（"14" / "13+"），**不是定数**；把它当定数会得到 14 而不是 14.1。
+  const levelValue = songData.levelValue(songId, levelIndex);
   const rating = num(score.rating) ?? (levelValue != null ? computeRating(levelValue, achievements) : 0);
   const native = (score.native ?? {}) as Record<string, unknown>;
 
   return {
     songId,
-    title: score.songName ?? songData.title(songId) ?? native.title?.toString() ?? `#${songId}`,
+    title: score.songName ?? songData.title(songId) ?? songData.title(baseSongId) ?? native.title?.toString() ?? `#${baseSongId}`,
     levelIndex,
-    type: normalizeType(score, songId),
+    type,
     rating,
     achievements,
     rate: normalizeRate(score, achievements),

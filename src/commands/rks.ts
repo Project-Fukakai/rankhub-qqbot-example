@@ -38,7 +38,14 @@ export const rksCommand: CommandHandler = async (services, ctx) => {
 
     const bucketByKey = new Map(bests.buckets.map((bucket) => [bucket.key, bucket]));
     const phi = bucketByKey.get('phi')?.items ?? [];
-    const best = bucketByKey.get('best30')?.items ?? [];
+    // RankHub 的 best30 可能把 phi 曲目也包含进来；b19 里 phi 是独立区，
+    // 不去重会导致同一首歌在 phi 区和 best 区各出现一次。
+    const scoreKey = (score: { songId: string; difficulty: string | null; levelIndex: number | null }): string =>
+      `${score.songId}|${score.difficulty ?? ''}|${score.levelIndex ?? ''}`;
+    const phiKeys = new Set(phi.map(scoreKey));
+    const best = (bucketByKey.get('best30')?.items ?? []).filter(
+      (score) => !phiKeys.has(scoreKey(score)),
+    );
 
     if (phi.length === 0 && best.length === 0) {
       await sendText(services, ctx, '这个 phigros 档案里还没有成绩记录，无法生成 RKS 图。');
