@@ -43,6 +43,8 @@ const schema = z.object({
   RANKHUB_AUTH_BASE: z.string().url().default('https://auth.rankhub.cc'),
   RANKHUB_API_BASE: z.string().url().default('https://api.rankhub.cc'),
   RANKHUB_SCOPES: z.string().default('openid profile offline_access game:read'),
+  /** 授权码回调地址；只作为 code 的载体，必须在 RankHub 应用上注册过。 */
+  RANKHUB_REDIRECT_URI: z.string().url().default('http://127.0.0.1:17830/callback'),
   RANKHUB_DEVICE_POLL_MAX_SECONDS: z.coerce.number().int().positive().default(240),
 
   TOKEN_ENC_KEY: z

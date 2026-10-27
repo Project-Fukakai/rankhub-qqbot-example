@@ -34,6 +34,16 @@ export interface FakeDeviceEntry {
   issued: boolean;
 }
 
+export interface FakeAuthorizationEntry {
+  pollToken: string;
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  scope: string;
+  status: 'pending' | 'approved' | 'denied' | 'expired' | 'cancelled';
+  code: string | null;
+}
+
 export interface FakeScorePage {
   items: Record<string, unknown>[];
   nextCursor: string | null;
@@ -53,6 +63,7 @@ export interface FakeRankHubState {
   /** 新建设备码时初始 `authorization_pending` 次数（默认 0 = 首次轮询即批准）。 */
   pendingPollsBeforeApproval: number;
   devices: Map<string, FakeDeviceEntry>;
+  authorizations: Map<string, FakeAuthorizationEntry>;
   accessTokens: Set<string>;
   refreshTokens: Set<string>;
   /** access token → 同一次签发里的 refresh token（撤销任一都撤整对，模拟族撤销）。 */
@@ -211,6 +222,7 @@ export class FakeRankHub {
       tokenExpiresIn: options.tokenExpiresIn ?? 3600,
       pendingPollsBeforeApproval: options.pendingPollsBeforeApproval ?? 0,
       devices: new Map(),
+      authorizations: new Map(),
       accessTokens: new Set(),
       refreshTokens: new Set(),
       accessToRefresh: new Map(),
@@ -277,6 +289,34 @@ export class FakeRankHub {
     entry.status = status;
   }
 
+  /** 模拟用户在 App 里确认授权（生成一次性 code）。 */
+  approveAuthorization(pollToken: string): void {
+    const entry = this.state.authorizations.get(pollToken);
+    if (entry === undefined) throw new Error(`未知 pollToken：${pollToken}`);
+    entry.status = 'approved';
+    entry.code = `code_${randomUUID()}`;
+  }
+
+  /** 模拟用户拒绝。 */
+  denyAuthorization(pollToken: string): void {
+    const entry = this.state.authorizations.get(pollToken);
+    if (entry === undefined) throw new Error(`未知 pollToken：${pollToken}`);
+    entry.status = 'denied';
+  }
+
+  /** 模拟授权过期。 */
+  expireAuthorization(pollToken: string): void {
+    const entry = this.state.authorizations.get(pollToken);
+    if (entry === undefined) throw new Error(`未知 pollToken：${pollToken}`);
+    entry.status = 'expired';
+  }
+
+  /** 最近一次创建的 pollToken（E2E 用来推进审批）。 */
+  lastAuthorization(): FakeAuthorizationEntry | null {
+    const entries = [...this.state.authorizations.values()];
+    return entries[entries.length - 1] ?? null;
+  }
+
   async close(): Promise<void> {
     this.server.closeAllConnections();
     await new Promise<void>((resolve, reject) => {
@@ -292,9 +332,19 @@ export class FakeRankHub {
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', this.origin);
     let form: Record<string, string> = {};
+    let json: Record<string, unknown> = {};
     if (req.method === 'POST') {
       const raw = await readBody(req);
-      form = Object.fromEntries(new URLSearchParams(raw));
+      const contentType = req.headers['content-type'] ?? '';
+      if (contentType.includes('application/json')) {
+        try {
+          json = raw === '' ? {} : (JSON.parse(raw) as Record<string, unknown>);
+        } catch {
+          json = {};
+        }
+      } else {
+        form = Object.fromEntries(new URLSearchParams(raw));
+      }
     }
     this.state.requests.push({
       method: req.method ?? 'GET',
@@ -304,7 +354,7 @@ export class FakeRankHub {
       hasAuthorization: typeof req.headers.authorization === 'string',
     });
     try {
-      this.route(req, res, url, form);
+      this.route(req, res, url, form, json);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.sendEnvelope(res, 500, 'common.internalError', `假服务内部错误：${detail}`, null);
@@ -316,12 +366,21 @@ export class FakeRankHub {
     res: ServerResponse,
     url: URL,
     form: Record<string, string>,
+    json: Record<string, unknown>,
   ): void {
     const method = req.method ?? 'GET';
     const path = url.pathname;
 
     if (method === 'POST' && path === '/v1/oauth/device_authorization') {
       this.handleDeviceAuthorization(res, form);
+      return;
+    }
+    if (method === 'POST' && path === '/v1/interaction/oauth-authorizations') {
+      this.handleCreateAuthorization(res, json);
+      return;
+    }
+    if (method === 'POST' && path === '/v1/interaction/oauth-authorizations/status') {
+      this.handleAuthorizationStatus(res, json);
       return;
     }
     if (method === 'POST' && path === '/v1/oauth/token') {
@@ -352,6 +411,77 @@ export class FakeRankHub {
   }
 
   // ───────────────────────────────── OAuth ─────────────────────────────────
+
+  private handleCreateAuthorization(res: ServerResponse, json: Record<string, unknown>): void {
+    const clientId = typeof json.clientId === 'string' ? json.clientId : '';
+    const redirectUri = typeof json.redirectUri === 'string' ? json.redirectUri : '';
+    if (clientId !== this.state.clientId) {
+      this.sendJson(res, 401, { error: 'invalid_client', error_description: 'Unknown OAuth client' });
+      return;
+    }
+    if (redirectUri === '') {
+      this.sendEnvelope(res, 400, 'common.invalidArgument', 'redirectUri is required', null);
+      return;
+    }
+    const pollToken = `oauth_poll_${randomUUID()}`;
+    const entry: FakeAuthorizationEntry = {
+      pollToken,
+      clientId,
+      redirectUri,
+      state: typeof json.state === 'string' ? json.state : '',
+      scope: typeof json.scope === 'string' ? json.scope : '',
+      status: 'pending',
+      code: null,
+    };
+    this.state.authorizations.set(pollToken, entry);
+    this.sendJson(res, 201, {
+      code: 'common.ok',
+      message: 'OK',
+      data: {
+        pollToken,
+        deepLink: `rankhub://oauth/authorize?token=${pollToken}`,
+        deepLinkQrCodeDataUrl:
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PzWvWQAAAABJRU5ErkJggg==',
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        client: { clientId, clientName: 'RankHub QQ Bot' },
+        permissions: [],
+      },
+      requestId: 'req_fake',
+    });
+  }
+
+  private handleAuthorizationStatus(res: ServerResponse, json: Record<string, unknown>): void {
+    const pollToken = typeof json.pollToken === 'string' ? json.pollToken : '';
+    const entry = this.state.authorizations.get(pollToken);
+    if (entry === undefined) {
+      this.sendEnvelope(res, 400, 'common.invalidArgument', 'pollToken is invalid', null);
+      return;
+    }
+    const resumeUrl =
+      entry.status === 'approved' && entry.code !== null
+        ? `${entry.redirectUri}?code=${encodeURIComponent(entry.code)}&state=${encodeURIComponent(entry.state)}`
+        : null;
+    this.sendJson(res, 200, {
+      code: 'common.ok',
+      message: 'OK',
+      data: { status: entry.status, resumeUrl, expiresAt: new Date(Date.now() + 600_000).toISOString() },
+      requestId: 'req_fake',
+    });
+  }
+
+  private handleAuthorizationCodeToken(res: ServerResponse, form: Record<string, string>): void {
+    const code = form.code ?? '';
+    const entry = [...this.state.authorizations.values()].find((item) => item.code === code);
+    if (entry === undefined || entry.status !== 'approved' || entry.code === null) {
+      this.sendJson(res, 400, { error: 'invalid_grant', error_description: 'authorization code is invalid' });
+      return;
+    }
+    if (entry.code === code && entry.status === 'approved') {
+      // 一次性：换过即作废。
+      entry.status = 'cancelled';
+    }
+    this.sendJson(res, 200, this.issueTokens());
+  }
 
   private handleDeviceAuthorization(res: ServerResponse, form: Record<string, string>): void {
     if (form.client_id !== this.state.clientId) {
@@ -394,6 +524,10 @@ export class FakeRankHub {
     }
     if (form.grant_type === DEVICE_CODE_GRANT_TYPE) {
       this.handleDeviceToken(res, form);
+      return;
+    }
+    if (form.grant_type === 'authorization_code') {
+      this.handleAuthorizationCodeToken(res, form);
       return;
     }
     if (form.grant_type === 'refresh_token') {

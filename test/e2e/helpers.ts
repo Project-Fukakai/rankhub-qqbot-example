@@ -124,6 +124,7 @@ export function makeTestConfig(options: {
     RANKHUB_AUTH_BASE: options.rankhubOrigin,
     RANKHUB_API_BASE: options.rankhubOrigin,
     RANKHUB_SCOPES: 'openid profile offline_access game:read',
+    RANKHUB_REDIRECT_URI: 'http://127.0.0.1:17830/callback',
     RANKHUB_DEVICE_POLL_MAX_SECONDS: 240,
     TOKEN_ENC_KEY: TEST_TOKEN_KEY,
     DB_PATH: options.dbPath,

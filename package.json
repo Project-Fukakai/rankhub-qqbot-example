@@ -20,7 +20,8 @@
     "assets:mai": "node scripts/fetch-assets-mai.mjs",
     "assets:verify": "node scripts/verify-assets.mjs",
     "live:whoami": "tsx scripts/live-whoami.ts",
-    "live:gateway": "tsx scripts/live-gateway.ts"
+    "live:gateway": "tsx scripts/live-gateway.ts",
+    "live:verify": "tsx scripts/live-verify.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80",

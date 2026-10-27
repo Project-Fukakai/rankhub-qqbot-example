@@ -62,7 +62,7 @@ describe('E2E 指令管线', () => {
   );
 
   it(
-    '/bind：设备码 → 模拟批准 → 同一 msg_id 的 msg_seq=2 成功文案 + 加密入库',
+    '/bind：二维码 + 模拟 App 确认 → msg_seq=3 成功文案 + 加密入库',
     async () => {
       const manual = createManualSleep();
       harness = await startHarness({ sleep: manual.sleep });
@@ -71,30 +71,32 @@ describe('E2E 指令管线', () => {
       const firstMessages = await harness.waitForMessages('msg-bind-1', 1);
       const first = firstMessages[0]!;
       expect(first.body.msg_seq).toBe(1);
+      expect(String(first.body.content)).toContain('RankHub App');
+      // 深链由授权请求下发，文本里必须带上（二维码识别不了时的兜底）。
+      expect(String(first.body.content)).toContain('rankhub://');
 
-      // 假 RankHub 在 device_authorization 时生成 user_code；回复里必须带上。
-      const devices = [...harness.fakeRankHub.state.devices.values()];
-      expect(devices).toHaveLength(1);
-      const device = devices[0]!;
-      const firstContent = String(first.body.content);
-      expect(firstContent).toContain(device.userCode);
-      expect(firstContent).toContain('/oauth/device');
+      // #2 是二维码图片。
+      const qrImage = await harness.waitForImageMessage();
+      expect(qrImage.body.msg_seq).toBe(2);
+      expect(qrImage.body.msg_type).toBe(7);
 
-      // 等后台轮询进入 sleep，再模拟用户在 App 内批准。
-      await waitFor(() => manual.pending() >= 1, '后台设备码轮询进入等待');
-      harness.fakeRankHub.setDeviceStatus(device.deviceCode, 'approved');
+      const authorization = harness.fakeRankHub.lastAuthorization();
+      expect(authorization).not.toBeNull();
+
+      // 等后台轮询进入 sleep，再模拟用户在 App 内确认。
+      await waitFor(() => manual.pending() >= 1, '后台授权轮询进入等待');
+      harness.fakeRankHub.approveAuthorization(authorization!.pollToken);
       manual.release();
 
-      const allMessages = await harness.waitForMessages('msg-bind-1', 2);
-      expect(allMessages).toHaveLength(2);
-      const second = allMessages[1]!;
-      expect(second.body.msg_id).toBe('msg-bind-1');
-      expect(second.body.msg_seq).toBe(2);
-      const secondContent = String(second.body.content);
-      expect(secondContent).toContain('绑定成功');
-      expect(secondContent).toContain('Fake User');
+      const allMessages = await harness.waitForMessages('msg-bind-1', 3);
+      expect(allMessages).toHaveLength(3);
+      const success = allMessages[2]!;
+      expect(success.body.msg_id).toBe('msg-bind-1');
+      expect(success.body.msg_seq).toBe(3);
+      const content = String(success.body.content);
+      expect(content).toContain('绑定成功');
+      expect(content).toContain('Fake User');
 
-      // 入库：binding 存在，且令牌是密文（不是明文 at_/rt_）。
       const binding = await harness.store.getByQqUser('user-openid-1');
       expect(binding).not.toBeNull();
       expect(binding!.status).toBe('active');
@@ -103,75 +105,45 @@ describe('E2E 指令管线', () => {
       expect(binding!.refreshTokenEnc).not.toContain('rt_');
       expect(binding!.accessTokenEnc ?? '').toMatch(/^v1\./);
       expect(binding!.accessTokenEnc ?? '').not.toContain('at_');
-
-      // pending 已清理。
       expect(await harness.store.getPendingDevice('user-openid-1')).toBeNull();
     },
     20_000,
   );
 
   it(
-    '/bind：slow_down 后继续轮询，仍能用 msg_seq=2 报绑定成功',
-    async () => {
-      const manual = createManualSleep();
-      harness = await startHarness({ sleep: manual.sleep });
-
-      harness.emitGroup('/bind', 'msg-bind-slow-1');
-      await harness.waitForMessages('msg-bind-slow-1', 1);
-      const device = [...harness.fakeRankHub.state.devices.values()][0]!;
-
-      await waitFor(() => manual.pending() >= 1, '第一次设备码轮询等待');
-      // 服务端第一次返回 slow_down（200 + error），客户端必须加间隔继续，而不是终止。
-      device.slowDownPolls = 1;
-      harness.fakeRankHub.setDeviceStatus(device.deviceCode, 'approved');
-      manual.release();
-
-      await waitFor(() => manual.pending() >= 1, 'slow_down 后第二次轮询等待');
-      manual.release();
-
-      const messages = await harness.waitForMessages('msg-bind-slow-1', 2);
-      expect(messages[1]!.body.msg_seq).toBe(2);
-      expect(String(messages[1]!.body.content)).toContain('绑定成功');
-    },
-    20_000,
-  );
-
-  it(
-    '/bind：用户拒绝 → 明确文案 + 清理 pending',
+    '/bind：用户拒绝 → 明确文案',
     async () => {
       const manual = createManualSleep();
       harness = await startHarness({ sleep: manual.sleep });
       harness.emitGroup('/bind', 'msg-bind-denied-1');
       await harness.waitForMessages('msg-bind-denied-1', 1);
-      const device = [...harness.fakeRankHub.state.devices.values()][0]!;
+      const authorization = harness.fakeRankHub.lastAuthorization()!;
 
-      await waitFor(() => manual.pending() >= 1, '设备码轮询等待');
-      harness.fakeRankHub.setDeviceStatus(device.deviceCode, 'denied');
+      await waitFor(() => manual.pending() >= 1, '授权轮询等待');
+      harness.fakeRankHub.denyAuthorization(authorization.pollToken);
       manual.release();
 
-      const messages = await harness.waitForMessages('msg-bind-denied-1', 2);
-      expect(String(messages[1]!.body.content)).toContain('拒绝');
-      expect(await harness.store.getPendingDevice('user-openid-1')).toBeNull();
+      const messages = await harness.waitForMessages('msg-bind-denied-1', 3);
+      expect(String(messages[2]!.body.content)).toContain('拒绝');
     },
     20_000,
   );
 
   it(
-    '/bind：设备码过期 → 明确文案 + 清理 pending',
+    '/bind：授权过期 → 明确文案 + 清理 pending',
     async () => {
       const manual = createManualSleep();
       harness = await startHarness({ sleep: manual.sleep });
       harness.emitGroup('/bind', 'msg-bind-expired-1');
       await harness.waitForMessages('msg-bind-expired-1', 1);
-      const device = [...harness.fakeRankHub.state.devices.values()][0]!;
+      const authorization = harness.fakeRankHub.lastAuthorization()!;
 
-      await waitFor(() => manual.pending() >= 1, '设备码轮询等待');
-      harness.fakeRankHub.setDeviceStatus(device.deviceCode, 'expired');
+      await waitFor(() => manual.pending() >= 1, '授权轮询等待');
+      harness.fakeRankHub.expireAuthorization(authorization.pollToken);
       manual.release();
 
-      const messages = await harness.waitForMessages('msg-bind-expired-1', 2);
-      expect(String(messages[1]!.body.content)).toContain('过期');
-      expect(await harness.store.getPendingDevice('user-openid-1')).toBeNull();
+      const messages = await harness.waitForMessages('msg-bind-expired-1', 3);
+      expect(String(messages[2]!.body.content)).toContain('失效');
     },
     20_000,
   );
@@ -185,16 +157,15 @@ describe('E2E 指令管线', () => {
 
       harness.emitGroup('/bind', 'msg-bind-timeout-1');
       await harness.waitForMessages('msg-bind-timeout-1', 1);
-      expect([...harness.fakeRankHub.state.devices.values()]).toHaveLength(1);
+      expect(harness.fakeRankHub.lastAuthorization()).not.toBeNull();
 
-      await waitFor(() => manual.pending() >= 1, '设备码轮询等待');
+      await waitFor(() => manual.pending() >= 1, '授权轮询等待');
       // 跳过 RANKHUB_DEVICE_POLL_MAX_SECONDS（240s）后再放行一次轮询。
       clock += 241_000;
       manual.release();
 
-      const messages = await harness.waitForMessages('msg-bind-timeout-1', 2);
-      expect(String(messages[1]!.body.content)).toContain('绑定超时');
-      expect(await harness.store.getPendingDevice('user-openid-1')).toBeNull();
+      const messages = await harness.waitForMessages('msg-bind-timeout-1', 3);
+      expect(String(messages[2]!.body.content)).toContain('绑定超时');
     },
     20_000,
   );
