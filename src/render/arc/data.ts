@@ -263,6 +263,8 @@ export function fromGameScore(item: GameScore): ArcaeaScore {
     nearCount: nativeNumber(native, 'near_count', 'nearCount'),
     missCount: nativeNumber(native, 'miss_count', 'missCount'),
     playTime: item.playTime,
+    // 装配层可在条目上附带预取的官方曲绘 data URL（App `songJacketUrl` 同款来源）。
+    coverUrl: (item as GameScore & { coverUrl?: string | null }).coverUrl ?? null,
   };
 }
 
@@ -302,6 +304,11 @@ export function resolveDifficulty(item: ArcaeaScore, assets: ArcAssets): Resolve
   if (numeric !== null) {
     slot = numeric % DIFFICULTY_NAMES.length;
     name = DIFFICULTY_NAMES[slot] ?? '';
+  }
+  // INS 与 BYD 共用 ratingClass=3，靠 alias 区分（App `arcaea_models.dart:550-553`）。
+  if (item.ratingClassAlias != null) {
+    slot = 5;
+    name = DIFFICULTY_NAMES[5]!;
   }
   if (!name && slot != null) name = DIFFICULTY_NAMES[slot] ?? '';
   if (!name) {
@@ -420,12 +427,19 @@ function resolveItem(item: ArcaeaScore, assets: ArcAssets, fallbackTitle: string
 /** 一张卡片的数据（`js/app.js:117-125` 的 arcaea 分支）。 */
 function buildCard(resolved: ResolvedItem, rank: number, assets: ArcAssets, nowMs: number): ArcTemplateCard {
   const { item, difficulty, title, scoreRank, rating } = resolved;
-  const coverPath = resolveCoverFile(assets, {
-    songId: item.songId,
-    title,
-    coverFile: item.coverFile ?? null,
-  });
-  const coverMissing = coverPath === null;
+  // 曲绘优先级（对齐 App `ArcaeaResourceIndex.songJacketUrl`）：
+  // 1. 调用方预取的官方曲绘（data URL，来自 RankHub 资源 CDN）；
+  // 2. 本地 best-posters 索引（`vendor/arc/covers`，只覆盖部分曲目）；
+  // 3. 占位图。
+  const presignedCover = item.coverUrl?.trim();
+  const coverPath = presignedCover
+    ? null
+    : resolveCoverFile(assets, {
+        songId: item.songId,
+        title,
+        coverFile: item.coverFile ?? null,
+      });
+  const coverMissing = presignedCover == null && coverPath === null;
   const grade = deriveGrade(item, scoreRank);
   const rankLabel = `B${String(rank).padStart(2, '0')}`;
   // `time_played` 是**毫秒时间戳**（rankhub_net write-guard/hard-bounds.ts:143），
@@ -444,7 +458,7 @@ function buildCard(resolved: ResolvedItem, rank: number, assets: ArcAssets, nowM
     difficulty: difficulty.name,
     levelText: difficulty.levelText,
     diffColor: difficulty.color,
-    coverUrl: coverMissing ? assets.placeholderUrl : toFileUrl(coverPath),
+    coverUrl: presignedCover ?? (coverPath === null ? assets.placeholderUrl : toFileUrl(coverPath)),
     coverMissing,
     primaryLabel: 'SCORE',
     primaryValue: formatScore(item.score),
@@ -488,12 +502,13 @@ export function buildArcTemplateData(
         .filter((item) => item && typeof item.songId === 'string')
         .map((item) => normalizeScore(item))
     : [];
-  // 用「有效 PTT」排序（含兜底算出来的），保证名次与卡片右下角的数字自洽。
+  // 排序优先用**服务端给的**单曲 PTT（`rating`），缺失时才按分数；不要用兜底算出来的 PTT，
+  // 否则「缺定数/INS」的条目会被兜底值挤到前面，名次与上游 B50 顺序不一致。
   const resolved = allItems
     .map((item, index) => resolveItem(item, assets, `TRACK ${index + 1}`))
     .sort(
       (left, right) =>
-        (right.rating ?? -Infinity) - (left.rating ?? -Infinity) ||
+        (right.item.rating ?? -Infinity) - (left.item.rating ?? -Infinity) ||
         (right.item.score ?? -Infinity) - (left.item.score ?? -Infinity) ||
         right.item.songId.localeCompare(left.item.songId) ||
         (right.item.levelIndex ?? -1) - (left.item.levelIndex ?? -1),

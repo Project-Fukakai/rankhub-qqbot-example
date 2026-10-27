@@ -5,6 +5,8 @@
  * 成绩来自 `GET /v1/games/arcaea/profiles/{id}/bests`；条目直接传 `GameScore`，
  * 渲染层会从 `native` 摊平 song_id/score/potential/clear_type 等字段。
  */
+import { prefetchArcaeaCovers } from '../rankhub/arc-assets.js';
+
 import type { CommandHandler } from './common.js';
 import {
   loadProfiles,
@@ -54,6 +56,15 @@ export const arcCommand: CommandHandler = async (services, ctx) => {
       return;
     }
 
+    // 曲绘来源对齐 App：按 song_id 从 RankHub 资源 CDN 取官方 jacket（本地 best-posters 仅兜底）。
+    const covers = await timed(services, 'prefetchArcaeaCovers', () =>
+      prefetchArcaeaCovers(items.map((item) => item.songId)),
+    );
+    const itemsWithCovers = items.map((item) => ({
+      ...item,
+      coverUrl: covers.get(item.songId) ?? null,
+    }));
+
     const potential =
       typeof bests.totals.potential === 'number'
         ? bests.totals.potential
@@ -64,7 +75,7 @@ export const arcCommand: CommandHandler = async (services, ctx) => {
         render.call(services.renderer, {
           profileName: profile.player.name ?? 'Player',
           potential,
-          items,
+          items: itemsWithCovers,
           computedAt: bests.computedAt,
         }),
       );

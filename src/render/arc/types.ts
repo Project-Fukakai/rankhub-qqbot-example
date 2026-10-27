@@ -29,6 +29,12 @@ export interface ArcaeaScore {
   level?: string | null;
   /** 难度槽位：0 PST / 1 PRS / 2 FTR / 3 BYD / 4 ETR / 5 INS。 */
   levelIndex?: number | null;
+  /**
+   * INS 难度的区分字段（对齐 App `ArcaeaDifficulty.slot`：
+   * `ratingClassAlias == null ? ratingClass : 5`）。
+   * v1 暂不下发，缺失时 INS 会按 BYD 显示。
+   */
+  ratingClassAlias?: number | null;
   /** 难度名（`FTR` / `BYD` …）；优先于 levelIndex。 */
   difficulty?: string | null;
   /** 谱面定数；缺省用曲绘索引里的 constant 补齐。 */
@@ -48,6 +54,12 @@ export interface ArcaeaScore {
   playTime?: string | null;
   /** 直接指定曲绘文件名（相对 `vendor/arc/covers`）；缺省按 songId 查索引。 */
   coverFile?: string | null;
+  /**
+   * 已就绪的曲绘 URL（`data:` / `file:` / `http(s):`）。
+   * 装配层可按 App 的 `songJacketUrl` 规则从 RankHub 资源 CDN 预取后以 data URL 传入；
+   * 给了就优先于 `coverFile` / 本地索引。
+   */
+  coverUrl?: string | null;
 }
 
 /**

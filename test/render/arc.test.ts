@@ -446,6 +446,24 @@ describe('arcaea 海报数据映射（纯函数）', () => {
     for (const card of data.cards) expect(card.difficulty).not.toMatch(/^\d+$/);
   });
 
+  it('INS 靠 ratingClassAlias 与 BYD 区分（对齐 App slot 规则）', () => {
+    const data = buildArcTemplateData(
+      {
+        profileName: 'Hikari',
+        potential: 12.3,
+        computedAt: FIXED_COMPUTED_AT,
+        items: [
+          { songId: 'testify', score: 10_000_000, difficulty: '3', levelIndex: 3, ratingClassAlias: 1 },
+          { songId: 'testify', score: 9_900_000, difficulty: '3', levelIndex: 3 },
+          { songId: 'testify', score: 9_800_000, difficulty: '4', levelIndex: 4 },
+        ],
+      },
+      assets,
+      { now: FIXED_NOW },
+    );
+    expect(data.cards.map((card) => card.difficulty)).toEqual(['INS', 'BYD', 'ETR']);
+  });
+
   it('songId 是 uuid 时按曲名回落到曲绘，不再缺图', () => {
     // 取索引里任意一首已知曲目，用它的标题 + 假 uuid 查询。
     const entry = Object.entries(assets.index.songs)[0]!;

@@ -336,3 +336,15 @@ Chromium launch 参数与 phi 一致（`--no-sandbox --disable-gpu --disable-dev
 `createArcaeaRenderer({ browserPath })` → `renderArcaeaB50(input)` / `close()`），命令入口在 `BOT:src/commands/arc.ts:24,63`。
 传参只用到 `browserPath`，与本模块 `ArcaeaRendererOptions` 一致；`tsc --noEmit` 在含这些他人改动的工作树上仍为 0 error。
 构造期不加载素材（与 phi 渲染器一致），`vendor/arc` 缺失时在首次 render 抛 `ArcAssetError`（消息带修复命令）。
+
+## 附：与 App 的映射对齐（2026-10-27）
+
+| 项 | App 事实 | 机器人实现 |
+| --- | --- | --- |
+| 曲绘来源 | `ArcaeaResourceIndex._songJacket` 按 `songs/<songId>/` 挑图（`RankHub/lib/modules/arcaea/models/arcaea_models.dart:469-487`），URL 由 `GameAssetsConfig.resolve('arcaea','/asset/<path>')` 拼（`lib/config/game_assets_config.dart:5-20`）⇒ `https://static.rankhub.cc/arcaea/asset/songs/<id>/<file>`；`remote_dl` 歌曲用 `dl_<id>` 目录 | `src/rankhub/arc-assets.ts` 按同一优先级预取 `base_256.jpg → 1080_base_256.jpg → base.jpg → 1080_base.jpg`（普通目录 + `dl_` 目录），转 data URL 交给渲染层；失败才回落本地 `vendor/arc/covers`（best-posters 子集）与占位图 |
+| 难度槽位 | `slot = ratingClassAlias == null ? ratingClass : 5`（`arcaea_models.dart:550-551`） | `resolveDifficulty` 支持数字难度（0-4）与 `ratingClassAlias`→INS；名字表 `PST/PRS/FTR/BYD/ETR/INS` 与 App `:553` 一致 |
+| 难度展示名 | `name` 同表 | 同表；不再显示 “0/2” 这类下标 |
+| 等级文本 | `constant?.toStringAsFixed(1) ?? '$rating${ratingPlus?'+':''}'`（`:554-555`） | 优先 `item.level`（RankHub 下发），否则 `constant`（一位小数），再否则留空 |
+| 排序 | 上游 B50 已排序 | 用服务端 `rating` 排序，缺失时按分数，不用兜底 PTT（避免 INS/缺定数条目被挤前排） |
+
+已知缺口：v1 目前不下发 `ratingClassAlias`（INS 与 BYD 都是 ratingClass=3），因此 INS 曲目在机器人侧仍显示 BYD；后端在 arcaea adapter 的 `native` 补一个 alias 字段即可无缝生效（`data.ts` 已前向兼容读取）。
