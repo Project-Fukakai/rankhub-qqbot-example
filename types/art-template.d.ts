@@ -1,5 +1,11 @@
-declare module 'art-template' {
-  export interface ArtTemplateOptions {
+declare function artTemplate(
+  filename: string,
+  data?: unknown,
+  options?: artTemplate.ArtTemplateOptions,
+): string;
+
+declare namespace artTemplate {
+  interface ArtTemplateOptions {
     filename?: string;
     cache?: boolean;
     minimize?: boolean;
@@ -10,14 +16,11 @@ declare module 'art-template' {
     bail?: boolean;
     imports?: Record<string, unknown>;
   }
-  export function render(filename: string, data?: unknown, options?: ArtTemplateOptions): string;
-  export function render(source: string, data?: unknown, options?: ArtTemplateOptions): string;
-  export function compile(source: string, options?: ArtTemplateOptions): (data?: unknown) => string;
-  export function defaults(options: ArtTemplateOptions): void;
-  const template: {
-    render: typeof render;
-    compile: typeof compile;
-    defaults: typeof defaults;
-  };
-  export default template;
+  function render(filename: string, data?: unknown, options?: ArtTemplateOptions): string;
+  function render(source: string, data?: unknown, options?: ArtTemplateOptions): string;
+  function compile(source: string, options?: ArtTemplateOptions): (data?: unknown) => string;
+  function defaults(options: ArtTemplateOptions): void;
+  export { artTemplate as default };
 }
+
+export = artTemplate;

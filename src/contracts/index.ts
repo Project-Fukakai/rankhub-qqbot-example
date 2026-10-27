@@ -247,7 +247,8 @@ export interface RenderProfile {
 export interface MaimaiB50RenderInput {
   profileName: string;
   rating: number;
-  buckets: { key: string; items: GameScore[] }[];
+  /** `latest`(15) / `archive`(35)；`label` 来自 API 的展示名，可缺省。 */
+  buckets: { key: string; label?: string; total?: number | null; items: GameScore[] }[];
   totals: Record<string, number | null>;
   computedAt: string;
 }
