@@ -10,6 +10,7 @@ import {
   pickLatestProfile,
   sendImage,
   sendText,
+  sendProcessing,
   summarizeBests,
   timed,
   withAuthorized,
@@ -32,6 +33,7 @@ export const rksCommand: CommandHandler = async (services, ctx) => {
       return;
     }
 
+    await sendProcessing(services, ctx, '生成 phigros RKS');
     const bests = await timed(services, 'getBests(phigros)', () =>
       services.rankhub.getBests(accessToken, 'phigros', profile.profileId),
     );

@@ -10,6 +10,7 @@ import {
   pickLatestProfile,
   sendImage,
   sendText,
+  sendProcessing,
   summarizeBests,
   timed,
   withAuthorized,
@@ -32,6 +33,7 @@ export const b50Command: CommandHandler = async (services, ctx) => {
       return;
     }
 
+    await sendProcessing(services, ctx, '生成 maimai B50');
     const bests = await timed(services, 'getBests(maimai)', () =>
       services.rankhub.getBests(accessToken, 'maimai', profile.profileId),
     );

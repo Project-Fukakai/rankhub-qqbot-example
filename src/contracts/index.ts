@@ -18,6 +18,8 @@ export interface QQMessageEvent {
   userOpenid: string;
   content: string;
   timestamp: string;
+  /** 引用回复用的消息索引（`message_scene.ext` 的 `msg_idx`）；没有则为 null。 */
+  quoteId: string | null;
   raw: unknown;
 }
 

@@ -59,6 +59,7 @@ describe('QQTransport 群@ 消息', () => {
       msg_type: 0,
       msg_id: dispatch.id,
       msg_seq: 1,
+      message_reference: { message_id: 'REFIDX_' + dispatch.id + '==' },
     });
     expect(
       server.requests.some((request) => request.path === '/v2/groups/group-openid-1/messages'),
@@ -180,6 +181,7 @@ describe('QQTransport 图片', () => {
       media: { file_info: 'file-info-1' },
       msg_id: dispatch.id,
       msg_seq: 1,
+      message_reference: { message_id: 'REFIDX_' + dispatch.id + '==' },
     });
     expect(server.messageRequests[1]?.body).toMatchObject({ msg_type: 0, msg_seq: 2 });
   });

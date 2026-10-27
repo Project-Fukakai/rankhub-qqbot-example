@@ -6,6 +6,7 @@ import {
   formatCount,
   formatDateTime,
   loadProfiles,
+  sendProcessing,
   sendText,
   timed,
   withAuthorized,
@@ -18,6 +19,7 @@ export const meCommand: CommandHandler = async (services, ctx) => {
     const identity = await timed(services, 'userinfo', () =>
       services.rankhub.userinfo(accessToken),
     );
+    await sendProcessing(services, ctx, '读取账号与档案');
     const games = await timed(services, 'listGames', () =>
       services.rankhub.listGames(accessToken),
     );

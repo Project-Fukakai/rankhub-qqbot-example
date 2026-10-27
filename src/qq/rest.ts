@@ -134,7 +134,13 @@ export class QQRESTClient {
   /** 发送文本消息（msg_type=0），被动回复带 msg_id + msg_seq。 */
   async sendText(
     target: QQMessageTarget,
-    input: { content: string; messageId: string; messageSeq: number },
+    input: {
+      content: string;
+      messageId: string;
+      messageSeq: number;
+      /** 引用回复：`message_scene.ext` 里的 `msg_idx`；缺省则不引用。 */
+      quoteId?: string | null;
+    },
   ): Promise<QQMessageAck> {
     const json = await this.requestJson(this.messagePath(target), {
       method: 'POST',
@@ -144,6 +150,7 @@ export class QQRESTClient {
         msg_type: 0,
         msg_id: input.messageId,
         msg_seq: input.messageSeq,
+        ...(input.quoteId ? { message_reference: { message_id: input.quoteId } } : {}),
       },
     });
     return toAck(json);
@@ -152,7 +159,13 @@ export class QQRESTClient {
   /** 上传图片并发送（msg_type=7），同样占用该 msg_id 的一个 msg_seq。 */
   async sendImage(
     target: QQMessageTarget,
-    input: { buffer: Buffer; filename: string; messageId: string; messageSeq: number },
+    input: {
+      buffer: Buffer;
+      filename: string;
+      messageId: string;
+      messageSeq: number;
+      quoteId?: string | null;
+    },
   ): Promise<QQMessageAck> {
     const uploaded = await this.uploadFile(target, {
       buffer: input.buffer,
@@ -168,6 +181,7 @@ export class QQRESTClient {
         media: { file_info: uploaded.fileInfo },
         msg_id: input.messageId,
         msg_seq: input.messageSeq,
+        ...(input.quoteId ? { message_reference: { message_id: input.quoteId } } : {}),
       },
     });
     return toAck(json);

@@ -13,6 +13,26 @@ export const C2C_MESSAGE_CREATE = 'C2C_MESSAGE_CREATE';
  * - GROUP_AT_MESSAGE_CREATE：d.group_openid / d.author.member_openid / d.id / d.content / d.timestamp
  * - C2C_MESSAGE_CREATE：d.author.user_openid（没有群）
  */
+/**
+ * 从 `message_scene.ext`（`string[]`，元素形如 `msg_idx=REFIDX_...`）里取引用回复 ID。
+ * 官方文档：“message_reference.message_id 非机器人消息从 MessageScene 的 ext 数组的 msg_idx 取”。
+ */
+function readQuoteId(scene: unknown): string | null {
+  if (!isRecord(scene)) return null;
+  const ext = scene.ext;
+  if (!Array.isArray(ext)) return null;
+  for (const item of ext) {
+    if (typeof item !== 'string') continue;
+    const eq = item.indexOf('=');
+    if (eq <= 0) continue;
+    if (item.slice(0, eq) === 'msg_idx') {
+      const value = item.slice(eq + 1).trim();
+      return value === '' ? null : value;
+    }
+  }
+  return null;
+}
+
 export function normalizeInboundEvent(
   t: string | null | undefined,
   d: unknown,
@@ -38,6 +58,7 @@ export function normalizeInboundEvent(
         userOpenid,
         content,
         timestamp: readTimestamp(d.timestamp),
+        quoteId: readQuoteId(d.message_scene),
         raw: d,
       };
     }
@@ -56,6 +77,7 @@ export function normalizeInboundEvent(
         userOpenid,
         content,
         timestamp: readTimestamp(d.timestamp),
+        quoteId: readQuoteId(d.message_scene),
         raw: d,
       };
     }

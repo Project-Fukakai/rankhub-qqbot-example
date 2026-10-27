@@ -193,8 +193,18 @@ describe('E2E 指令管线', () => {
       harness.emitGroup('/b50', 'msg-b50-1');
       const imageMessage = await harness.waitForImageMessage();
 
+      // 耗时操作先回一条提示（msg_seq=1），图片是 msg_seq=2。
+      const messages = await harness.waitForMessages('msg-b50-1', 2);
+      expect(messages[0]!.body.msg_type).toBe(0);
+      expect(messages[0]!.body.msg_seq).toBe(1);
+      expect(String(messages[0]!.body.content)).toContain('正在生成 maimai B50');
+      // 两条都引用原消息（message_reference.message_id = message_scene.ext 的 msg_idx）。
+      for (const message of messages) {
+        expect(message.body.message_reference).toEqual({ message_id: 'REFIDX_msg-b50-1==' });
+      }
+
       expect(imageMessage.body.msg_id).toBe('msg-b50-1');
-      expect(imageMessage.body.msg_seq).toBe(1);
+      expect(imageMessage.body.msg_seq).toBe(2);
       expect(imageMessage.body.msg_type).toBe(7);
       expect(imageMessage.body.media).toEqual({ file_info: 'fake-file-info' });
 

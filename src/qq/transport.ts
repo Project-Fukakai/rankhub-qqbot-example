@@ -144,6 +144,7 @@ export class QQTTransport implements QQTransport {
         content: chunk,
         messageId: ctx.event.messageId,
         messageSeq,
+        quoteId: ctx.event.quoteId,
       });
     }
     this.logger.info('QQ 文本已发送', {
@@ -161,6 +162,7 @@ export class QQTTransport implements QQTransport {
       filename,
       messageId: ctx.event.messageId,
       messageSeq,
+      quoteId: ctx.event.quoteId,
     });
     this.logger.info('QQ 图片已发送', {
       kind: ctx.event.kind,

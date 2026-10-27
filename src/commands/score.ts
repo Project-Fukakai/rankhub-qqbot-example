@@ -14,6 +14,7 @@ import {
   loadProfiles,
   normalizeGame,
   pickLatestProfile,
+  sendProcessing,
   sendText,
   timed,
   withAuthorized,
@@ -74,6 +75,7 @@ export const scoreCommand: CommandHandler = async (services, ctx) => {
       return;
     }
 
+    await sendProcessing(services, ctx, '检索成绩');
     let all = services.runtime.getScores(binding.id, game, profile.profileId);
     if (all === null) {
       const collected: GameScore[] = [];

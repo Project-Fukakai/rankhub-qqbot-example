@@ -8,6 +8,7 @@ import {
   normalizeGame,
   pickLatestProfile,
   sendText,
+  sendProcessing,
   summarizeBests,
   timed,
   withAuthorized,
@@ -37,6 +38,7 @@ export const bestCommand: CommandHandler = async (services, ctx) => {
       await sendText(services, ctx, `没有找到可用的 ${game} 档案。`);
       return;
     }
+    await sendProcessing(services, ctx, '查询最佳成绩');
     const bests = await timed(services, `getBests(${game})`, () =>
       services.rankhub.getBests(accessToken, game, profile.profileId),
     );

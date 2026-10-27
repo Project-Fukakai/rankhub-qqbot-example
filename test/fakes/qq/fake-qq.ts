@@ -189,6 +189,11 @@ export class FakeQQServer {
         id: 'author-id-1',
         member_openid: overrides.userOpenid ?? 'user-openid-1',
       },
+      // 引用回复的 ID 来自 message_scene.ext 的 msg_idx（官方文档 §message_reference）。
+      message_scene: {
+        source: 'default',
+        ext: [`msg_idx=REFIDX_${overrides.messageId ?? `msg-${this.messageCounter}`}==`],
+      },
     };
     this.emitDispatch('GROUP_AT_MESSAGE_CREATE', d);
     return d;
@@ -204,6 +209,10 @@ export class FakeQQServer {
       content,
       timestamp: overrides.timestamp ?? new Date().toISOString(),
       author: { id: 'author-id-1', user_openid: overrides.userOpenid ?? 'user-openid-2' },
+      message_scene: {
+        source: 'default',
+        ext: [`msg_idx=REFIDX_${overrides.messageId ?? `c2c-${this.messageCounter}`}==`],
+      },
     };
     this.emitDispatch('C2C_MESSAGE_CREATE', d);
     return d;

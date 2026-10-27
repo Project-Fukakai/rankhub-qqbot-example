@@ -18,8 +18,33 @@ describe('normalizeInboundEvent', () => {
       userOpenid: 'member-1',
       content: '/help',
       timestamp: '2026-10-27T04:00:00.000Z',
+      quoteId: null,
       raw: expect.any(Object) as unknown,
     });
+  });
+
+  it('从 message_scene.ext 解析引用回复 msg_idx', () => {
+    const event = normalizeInboundEvent('GROUP_AT_MESSAGE_CREATE', {
+      id: 'msg-2',
+      content: '/b50',
+      timestamp: '2026-10-27T04:00:00.000Z',
+      group_openid: 'group-1',
+      author: { id: 'author-1', member_openid: 'member-1' },
+      message_scene: {
+        source: 'default',
+        ext: ['auth_token=t', 'msg_idx=REFIDX_abc=='],
+      },
+    });
+    expect(event?.quoteId).toBe('REFIDX_abc==');
+
+    const noScene = normalizeInboundEvent('C2C_MESSAGE_CREATE', {
+      id: 'c2c-2',
+      content: '/me',
+      this: 'x',
+      author: { user_openid: 'user-1' },
+      message_scene: { source: 'default', ext: ['msg_idx='] },
+    });
+    expect(noScene?.quoteId).toBeNull();
   });
 
   it('C2C_MESSAGE_CREATE → c2c（无群）', () => {

@@ -90,6 +90,24 @@ export async function sendImage(
   await services.reply.image(eventContext(ctx.event), image, filename);
 }
 
+/**
+ * 耗时操作的“先回一条”提示（占用该 msg_id 的一个 msg_seq）。
+ * 用户先看到反馈，最终结果作为后续 msg_seq 再发；失败只记日志，不影响主流程。
+ */
+export async function sendProcessing(
+  services: CommandServices,
+  ctx: CommandContext,
+  label: string,
+): Promise<void> {
+  try {
+    await sendText(services, ctx, `⏳ 正在${label}，请稍候…`);
+  } catch (error) {
+    ctx.logger.warn('发送处理提示失败', {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** 后台任务里的回复：会话可能已关闭，失败只记日志不抛。 */
 export async function safeSendText(
   services: CommandServices,
