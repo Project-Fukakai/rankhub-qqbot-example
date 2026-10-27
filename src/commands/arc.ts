@@ -65,6 +65,16 @@ export const arcCommand: CommandHandler = async (services, ctx) => {
       coverUrl: covers.get(item.songId) ?? null,
     }));
 
+    services.logger.info('Arcaea 曲目映射采样（排查曲名/曲绘）', {
+      sample: items.slice(0, 5).map((item) => ({
+        songId: item.songId,
+        songName: item.songName,
+        levelIndex: item.levelIndex,
+      })),
+      covers: covers.size,
+      total: items.length,
+    });
+
     const potential =
       typeof bests.totals.potential === 'number'
         ? bests.totals.potential
