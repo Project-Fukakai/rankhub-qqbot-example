@@ -14,6 +14,11 @@
  *
  * ## 资产 URL 规则（以 App 为准，不猜）
  *
+ * **优先级 0：v1 `profile.assets`（服务端权威的绝对 URL）**——冻结契约见
+ * `RankHubWorkspace/docs/V1-PROFILE-ASSETS.md`：`avatarUrl` / `backgroundUrl` /
+ * `characterArtworkUrl`，`null` 表示「没有这个概念」。有值时直接用，**不再本地拼**；
+ * 老实例没有 `assets` 时按下面 1/2/3 的本地规则回退（行为与历史版本逐字一致）。
+ *
  * 分三类，优先级从高到低：
  *
  * 1. **RankHub 相对资产路径**（形如 `/v0/assets/{id}/content`）→ `normalizeAssetUrl()`：
@@ -35,11 +40,10 @@
  *    `https://static.rankhub.cc/arcaea/asset/<去掉 assets/ 前缀的路径>`；
  *    `avatar` 为空时回落到搭档图标 `…/asset/char/<character>_icon.png`。
  *
- * ❗ **当前 v1 现实的缺口**：v1 的三个 adapter 只把 `name` / `rating` 与少量原生键放进
- * `player.native`，**没有** phigros 的 `avatar_asset_key` / `background_song_id`、arcaea 的
- * `avatar` / `nameplate`（证据见 docs）。因此今天用 v1 数据调用本模块，`avatarUrl` /
- * `backgroundUrl` 多为 `null`；本模块按 v0/App 的键名做**前向兼容读取**，后端一旦把这些键
- * 加进 `player.native`，无需改本模块即可生效。文档里把该缺口标成 `unknown` 交给 Lead 决策。
+ * ❗ **v1 现实的缺口与补齐**：v1 的三个 adapter 只把 `name` / `rating` 与少量原生键放进
+ * `player.native`，过去**没有** phigros 的 `avatar_asset_key` / `background_song_id`、arcaea 的
+ * `avatar` / `nameplate`，`/me` 因此拿不到图。现在由 v1 `profile.assets`（绝对 URL）统一提供，
+ * 本模块优先消费；老实例仍按 v0/App 的键名做**前向兼容读取**，后端没部署 assets 时行为不变。
  */
 
 import { asRecord } from './wire.js';
@@ -58,8 +62,10 @@ export interface ProfileView {
   game: string;
   /** 头像绝对 URL；没有这个概念或服务端不下发时为 `null`。 */
   avatarUrl: string | null;
-  /** 背景/名片板绝对 URL；没有这个概念或服务端不下发时为 `null`。 */
+  /** 背景/名片板/曲绘/背景板绝对 URL；没有这个概念或服务端不下发时为 `null`。 */
   backgroundUrl: string | null;
+  /** 立绘绝对 URL（目前只有 arcaea 搭档立绘）；没有这个概念时为 `null`。 */
+  characterArtworkUrl: string | null;
   /** 总分（量纲随游戏，渲染层自己格式化）；缺失为 `null`。 */
   rating: number | null;
   /** 游戏特定展示字段（已按贵贱排序，调用方可自行截断）。 */
@@ -387,6 +393,40 @@ function buildFields(
 
 // ────────────────────────────────────────────────────────── 资产解析
 
+/**
+ * v1 `profile.assets`（冻结契约 `RankHubWorkspace/docs/V1-PROFILE-ASSETS.md` §2）。
+ *
+ * 老实例没有该字段 / 字段缺失 / 类型不对 ⇒ 对应字段 `null`（不抛错）；不做 URL 归一，
+ * 契约保证是绝对 URL，空串与字面量 `'null'` 按缺失处理（与本模块其它字段同口径）。
+ */
+function readProfileAssets(profile: Record<string, unknown> | null): {
+  avatarUrl: string | null;
+  backgroundUrl: string | null;
+  characterArtworkUrl: string | null;
+} {
+  const assets = asRecord(profile?.['assets']);
+  return {
+    avatarUrl: readText(assets?.['avatarUrl']),
+    backgroundUrl: readText(assets?.['backgroundUrl']),
+    characterArtworkUrl: readText(assets?.['characterArtworkUrl']),
+  };
+}
+
+/**
+ * arcaea 搭档 1080px 立绘 URL：`{origin}/arcaea/asset/char/1080/{character}.png`。
+ *
+ * 镜像 App `_characterArtworkUrl`（`arcaea_views.dart:1259-1263`）。v1 `assets` 有值时优先用
+ * `assets.characterArtworkUrl`，本函数只是**老实例**（无 assets）的回退。
+ */
+export function arcaeaCharacterArtworkUrl(
+  character: string | null,
+  origin: string = DEFAULT_GAME_ASSET_ORIGIN,
+): string | null {
+  const text = readText(character);
+  if (text === null) return null;
+  return `${origin}/arcaea/asset/char/1080/${encodeURIComponent(text)}.png`;
+}
+
 /** phigros 头像：`avatar_asset_key` 优先，回落非绝对 URL 的 `avatar`（`phigros_net_models.dart:98-106`）。 */
 function phigrosAvatar(
   native: Record<string, unknown> | null,
@@ -447,6 +487,9 @@ function maimaiAvatar(
 /**
  * 把一份 v1 档案归一成名片展示模型。
  *
+ * **资源优先级**：v1 `profile.assets`（绝对 URL，服务端权威）> 本地 URL 规则（老实例回退）。
+ * 老实例没有 `assets` 时行为与历史版本逐字一致（`profile.test.ts` 锁定）。
+ *
  * @param game    游戏键（`maimai` / `phigros` / `arcaea`）；未知游戏返回空字段、不崩。
  * @param profile `GET /v1/games/{game}/profiles` 里的一条档案。
  * @param format  可选，`GET /v1/games/{game}/format` 的 `data`；给了就只展示它声明过的字段。
@@ -462,6 +505,7 @@ export function describeProfile(
   const record = asRecord(profile);
   const player = asRecord(record?.['player']);
   const native = asRecord(player?.['native']);
+  const assets = readProfileAssets(record);
 
   const ratingRaw = player?.['rating'];
   const rating =
@@ -470,22 +514,30 @@ export function describeProfile(
   const gameAssetOrigin = options.gameAssetOrigin ?? DEFAULT_GAME_ASSET_ORIGIN;
   let avatarUrl: string | null = null;
   let backgroundUrl: string | null = null;
+  let characterArtworkUrl: string | null = null;
   switch (game) {
     case 'phigros':
-      avatarUrl = phigrosAvatar(native, record, gameAssetOrigin);
-      backgroundUrl = phigrosBackground(native, record, gameAssetOrigin);
+      // v1 assets 优先；老实例按 avatarAssetKey / backgroundSongId 本地拼（不回归）。
+      avatarUrl = assets.avatarUrl ?? phigrosAvatar(native, record, gameAssetOrigin);
+      backgroundUrl = assets.backgroundUrl ?? phigrosBackground(native, record, gameAssetOrigin);
       break;
     case 'arcaea':
-      avatarUrl = arcaeaAvatar(native, gameAssetOrigin);
-      backgroundUrl = arcaeaBackground(native, gameAssetOrigin);
+      avatarUrl = assets.avatarUrl ?? arcaeaAvatar(native, gameAssetOrigin);
+      backgroundUrl = assets.backgroundUrl ?? arcaeaBackground(native, gameAssetOrigin);
+      characterArtworkUrl =
+        assets.characterArtworkUrl ??
+        arcaeaCharacterArtworkUrl(readFirstText(native, ['character']), gameAssetOrigin);
       break;
     case 'maimai':
-      avatarUrl = maimaiAvatar(native, options);
-      // maimai 的 `name_plate` 是收藏品对象（{id,name,…}），不是图片地址 ⇒ 背景恒 null。
-      backgroundUrl = null;
+      avatarUrl = assets.avatarUrl ?? maimaiAvatar(native, options);
+      // v1 assets.backgroundUrl = 用户背景板（frame）URL；老实例没有 frame 概念 ⇒ null。
+      backgroundUrl = assets.backgroundUrl;
       break;
     default:
-      // 未知游戏：没有可依据的映射，保持空，不猜。
+      // 未知游戏：没有本地规则可依据；服务端给了 assets 就照用，否则保持空（不猜）。
+      avatarUrl = assets.avatarUrl;
+      backgroundUrl = assets.backgroundUrl;
+      characterArtworkUrl = assets.characterArtworkUrl;
       break;
   }
 
@@ -493,6 +545,7 @@ export function describeProfile(
     game,
     avatarUrl,
     backgroundUrl,
+    characterArtworkUrl,
     rating,
     fields: buildFields(fieldSpecsOf(game), native, declaredNamesOf(format)),
     isPublic: record?.['isPublic'] === true,

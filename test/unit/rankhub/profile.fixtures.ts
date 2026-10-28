@@ -13,9 +13,17 @@
  */
 
 import type { GameProfile } from '../../../src/contracts/index.js';
+import type { GameProfileAssets } from '../../../src/contracts/index.js';
 import type { GameFormatLike } from '../../../src/rankhub/profile.js';
 
-/** 造一条档案，只覆盖测试关心的部分。 */
+/** 老实例形状：没有 v1 `assets`（三字段全 null）⇒ 走本地 URL 回退。 */
+export const NO_ASSETS: GameProfileAssets = {
+  avatarUrl: null,
+  backgroundUrl: null,
+  characterArtworkUrl: null,
+};
+
+/** 造一条档案，只覆盖测试关心的部分；`assets` 缺省 = 老实例（全 null）。 */
 function profileOf(input: {
   profileId: string;
   game: string;
@@ -23,6 +31,7 @@ function profileOf(input: {
   rating: number | null;
   native: Record<string, unknown> | null;
   isPublic: boolean;
+  assets?: GameProfileAssets;
 }): GameProfile {
   return {
     profileId: input.profileId,
@@ -33,6 +42,7 @@ function profileOf(input: {
     syncCapable: true,
     lastSyncedAt: '2026-10-20T01:02:03.000Z',
     updatedAt: '2026-10-20T01:02:03.000Z',
+    assets: input.assets ?? NO_ASSETS,
   };
 }
 
@@ -204,6 +214,60 @@ export const arcaeaFormat: GameFormatLike = {
     ],
   },
 };
+
+// ────────────────────────────────────────── v1 `assets`（契约 V1-PROFILE-ASSETS §2）
+
+/**
+ * v1 新增的 `assets`（绝对 URL，服务端权威）：有值时 `describeProfile()` 优先用它，
+ * 不再走本地 URL 规则。下面三条各给三游戏一份夹具。
+ */
+export const maimaiProfileV1Assets = profileOf({
+  profileId: 'profile-mai-assets',
+  game: 'maimai',
+  name: 'だんご',
+  rating: 15370,
+  native: { ...maimaiProfile.player.native },
+  isPublic: true,
+  assets: {
+    avatarUrl: 'https://cdn.test/maimai/avatar.png',
+    backgroundUrl: 'https://cdn.test/maimai/frame.png',
+    characterArtworkUrl: null,
+  },
+});
+
+/** phigros：native 同时带本地规则键 —— 用来证明 v1 `assets` 优先于本地拼接。 */
+export const phigrosProfileV1Assets = profileOf({
+  profileId: 'profile-phi-assets',
+  game: 'phigros',
+  name: 'Fake Player',
+  rating: 15.43,
+  native: {
+    ...phigrosProfileWithAssets.player.native,
+    avatar_asset_key: 'avatar.Introduction',
+    background_song_id: 'Glaciaxion.SunsetRay.0',
+  },
+  isPublic: true,
+  assets: {
+    avatarUrl: 'https://cdn.test/phigros/avatar.png',
+    backgroundUrl: 'https://cdn.test/phigros/background.png',
+    characterArtworkUrl: null,
+  },
+});
+
+/** arcaea：assets 带立绘；同时 native 有 `character` —— 证明立绘也走 assets 优先。 */
+export const arcaeaProfileV1Assets = profileOf({
+  profileId: 'profile-arc-assets',
+  game: 'arcaea',
+  name: 'Hikari',
+  rating: 12.34,
+  native: { ...arcaeaProfileV1.player.native },
+  isPublic: true,
+  assets: {
+    avatarUrl: 'https://cdn.test/arcaea/avatar.png',
+    backgroundUrl: 'https://cdn.test/arcaea/nameplate.png',
+    characterArtworkUrl: 'https://cdn.test/arcaea/char/1080/0.png',
+  },
+});
 
 // ────────────────────────────────────────────────────────── 边界夹具
 

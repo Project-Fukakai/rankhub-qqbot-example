@@ -1,12 +1,12 @@
 /**
  * 名片渲染测试素材：用 @napi-rs/canvas **现场生成**占位图，不触网。
  *
- * - banner / 头像 / 卡片背景 / 二维码 全部按固定随机种子生成，结果是确定性的；
+ * - banner / 头像 / 曲绘 / 立绘 / 二维码 全部按固定随机种子生成，结果是确定性的；
  * - 游戏图标优先用 `vendor/card/icons/{game}-icon.png`（仓库已放入，与正式数据同源），
- *   缺失时回退到现场生成的圆形占位图 —— 保证 CI/新克隆没有 vendor 也能跑。
- *
- * 数据约定与 `src/commands/me.ts` 一致：`title` = 玩家名，`subtitle` =「游戏名 · 评分体系」，
- * `rating` 已格式化为展示字符串，`fields` 是 2-4 个统计小块（labels 取自 `src/rankhub/profile.ts`）。
+ *   缺失时回退到现场生成的圆形占位图 —— 保证 CI/新克隆没有 vendor 也能跑；
+ * - 三张卡的数据形状严格按冻结契约 `src/contracts/index.ts` 的判别联合：
+ *   maimai（rating/b35/b15/头像/背景板/最近同步）、phigros（rks/课题模式/难度/达成统计/
+ *   曲绘）、arcaea（potential/b50/b10/头像/立绘/最近同步）。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -14,14 +14,23 @@ import { fileURLToPath } from 'node:url';
 
 import { createCanvas } from '@napi-rs/canvas';
 
-import type { PlayerCardInput } from '../../src/render/card/index.js';
+import type {
+  PhigrosDifficulty,
+  PlayerCardArcaeaCardData,
+  PlayerCardInput,
+  PlayerCardMaimaiCardData,
+  PlayerCardPhigrosCardData,
+} from '../../src/render/card/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..');
 const ICON_DIR = join(REPO_ROOT, 'vendor', 'card', 'icons');
 const PHIGROS_COVERS_DIR = join(REPO_ROOT, 'vendor', 'covers', 'phigros');
-/** 固定取这一首的曲绘作为「App 自定义背景」示例（`background_song_id` 的取值来源）。 */
+/** 固定取这一首的曲绘作为 phigros 卡片背景示例（`backgroundSongId` 的取值来源）。 */
 const PHIGROS_COVER_SONG_ID = 'SURREALISM.Itsuki.0';
+/** 测试用固定同步时间：UTC ISO → 期望展示为 Asia/Shanghai 的 2026-10-27 21:05。 */
+export const FIXTURE_SYNCED_AT = '2026-10-27T13:05:00.000Z';
+export const FIXTURE_SYNCED_DISPLAY = '2026-10-27 21:05';
 
 /** 确定性 PRNG（mulberry32），用于生成「看起来像二维码」的方块。 */
 function mulberry32(seed: number): () => number {
@@ -138,7 +147,7 @@ export function gameIcon(game: 'maimai' | 'phigros' | 'arcaea'): Buffer {
 /**
  * App 的 phigros 卡片背景 = 玩家选中的曲绘（`phigros_player_card.dart:153-156`）。
  * 测试从曲绘缓存（`vendor/covers/phigros`，由 fetch-assets-phi 准备）里取固定一首，
- * 没有缓存时返回 null（卡片走纯色兜底）。
+ * 没有缓存时返回 null（卡片走 App 的 grey900 纯色兜底）。
  */
 export function phigrosCover(): Buffer | null {
   const indexPath = join(PHIGROS_COVERS_DIR, 'index.json');
@@ -199,7 +208,61 @@ export function qrPng(size: number, seed = 20261027): Buffer {
   return canvas.toBuffer('image/png');
 }
 
-/** 完整素材：3 个游戏 + 3 张卡片 + banner/头像/二维码，覆盖全部版式分支。 */
+// ─────────────────────────────── 卡片 fixture ───────────────────────────────
+
+/** maimai：15023 → DX Rating 徽章第 11 档（App `_assetIndex`）。 */
+export function maimaiCard(overrides: Partial<PlayerCardMaimaiCardData> = {}): PlayerCardMaimaiCardData {
+  const card: PlayerCardMaimaiCardData = {
+    game: 'maimai',
+    name: '星野 みなと',
+    rating: 15023,
+    b35Rating: 14980,
+    b15Rating: 15080,
+    avatar: avatarPng(240, '#ffd7e8', '#c8317f'),
+    lastSyncedAt: FIXTURE_SYNCED_AT,
+    ...overrides,
+  };
+  return card;
+}
+
+/** phigros：RKS 15.4321、课题模式 415（4 段位 + 15）、IN 难度统计。 */
+export function phigrosCard(overrides: Partial<PlayerCardPhigrosCardData> = {}): PlayerCardPhigrosCardData {
+  const card: PlayerCardPhigrosCardData = {
+    game: 'phigros',
+    name: '星野 みなと',
+    rks: 15.4321,
+    challengeModeRank: 415,
+    avatar: avatarPng(240, '#c9f5ff', '#127ba3'),
+    background:
+      phigrosCover() ??
+      gradientPng(1120, 1120, '#0f3548', '#10131d', { blobs: true, seed: 22 }),
+    difficulty: 'IN',
+    achievements: { played: 120, clear: 98, fc: 64, phi: 3 },
+    ...overrides,
+  };
+  return card;
+}
+
+/** arcaea：PTT 12.34（rating 图标第 5 档）、B50 12.10 / B10 11.98、1080 立绘。 */
+export function arcaeaCard(overrides: Partial<PlayerCardArcaeaCardData> = {}): PlayerCardArcaeaCardData {
+  const card: PlayerCardArcaeaCardData = {
+    game: 'arcaea',
+    name: '星野 みなと',
+    potential: 12.34,
+    b50Avg: 12.1,
+    b10Avg: 11.98,
+    avatar: avatarPng(240, '#e8dcff', '#4b2f9e'),
+    characterArtwork: gradientPng(1080, 1080, '#3b2a63', '#120c22', {
+      blobs: true,
+      seed: 33,
+    }),
+    lastSyncedAt: FIXTURE_SYNCED_AT,
+    ...overrides,
+  };
+  return card;
+}
+
+/** 完整素材：3 个游戏 + 3 张卡片 + banner/头像/二维码，覆盖三套 App 版式。 */
 export function buildFullCardInput(): PlayerCardInput {
   return {
     displayName: '星野 みなと',
@@ -212,56 +275,12 @@ export function buildFullCardInput(): PlayerCardInput {
       { name: 'Phigros', icon: gameIcon('phigros') },
       { name: 'Arcaea', icon: gameIcon('arcaea') },
     ],
-    cards: [
-      {
-        // maimai 的 background 恒为 null（`src/rankhub/profile.ts` 里 name_plate 不是图片）：
-        // 刻意不传背景，让渲染器使用 App 的默认背景板（vendor/card/backgrounds/maimai.png）。
-        game: 'maimai',
-        title: '星野 みなと',
-        subtitle: 'maimai DX · DX rating',
-        rating: '15023',
-        avatar: avatarPng(240, '#ffd7e8', '#c8317f'),
-        fields: [
-          { label: '段位', value: 'SSS' },
-          { label: 'CLASS', value: '11' },
-          { label: '星级', value: '★ 3' },
-        ],
-      },
-      {
-        game: 'phigros',
-        title: '星野 みなと',
-        subtitle: 'Phigros · Ranking Score',
-        rating: '15.4321',
-        // App 里 phigros 背景是玩家选的曲绘；没有曲绘缓存时用生成图兜底，保证 CI 也能跑。
-        background:
-          phigrosCover() ??
-          gradientPng(1040, 416, '#0f3548', '#10131d', { blobs: true, seed: 22 }),
-        avatar: avatarPng(240, '#c9f5ff', '#127ba3'),
-        fields: [
-          { label: '课题模式', value: '白 15' },
-          { label: '游戏版本', value: 'v3.16.0' },
-        ],
-      },
-      {
-        game: 'arcaea',
-        title: '星野 みなと',
-        subtitle: 'Arcaea · Potential',
-        rating: '12.34',
-        // 不传背景：渲染器使用 App 内置的 assets/arcaea/bg_light.png（vendor/card/backgrounds/arcaea.png）；
-        // 玩家自定义 nameplate 时，/me 会把 nameplate 作为 background 传进来。
-        avatar: avatarPng(240, '#e8dcff', '#4b2f9e'),
-        fields: [
-          { label: 'Best 30 均值', value: '12.10' },
-          { label: 'Best 50 均值', value: '11.98' },
-          { label: '搭档', value: '光' },
-        ],
-      },
-    ],
+    cards: [maimaiCard(), phigrosCard(), arcaeaCard()],
     qr: qrPng(420),
   };
 }
 
-/** 最小输入：没有 banner / 头像 / 卡片背景 / 二维码，也没有任何游戏与卡片。 */
+/** 最小输入：没有 banner / 头像 / 卡片 / 二维码，也没有任何游戏。 */
 export function buildMinimalCardInput(): PlayerCardInput {
   return {
     displayName: '匿名玩家',
@@ -271,7 +290,10 @@ export function buildMinimalCardInput(): PlayerCardInput {
   };
 }
 
-/** 缺可选素材但有卡片：rating 为 null、无背景/头像、字段为空，全部走兜底。 */
+/**
+ * 稀疏数据：三张卡但 rating/potential 为 null、没有头像/曲绘/立绘/背景板，
+ * 全部走 App 的 `--` / 纯色 / person 图标兜底。
+ */
 export function buildSparseCardInput(): PlayerCardInput {
   return {
     displayName: 'Sparse Player',
@@ -279,20 +301,38 @@ export function buildSparseCardInput(): PlayerCardInput {
     bio: null,
     banner: null,
     avatar: null,
-    games: [{ name: 'Phigros', icon: gameIcon('phigros') }],
+    games: [{ name: 'maimai', icon: gameIcon('maimai') }],
     cards: [
       {
-        game: 'phigros',
-        title: 'Sparse Player',
+        game: 'maimai',
+        name: '',
         rating: null,
-        fields: [],
+        b35Rating: null,
+        b15Rating: null,
+        lastSyncedAt: null,
+      },
+      {
+        game: 'phigros',
+        name: 'Sparse Player',
+        rks: null,
+        challengeModeRank: 0,
+        difficulty: 'AT',
+        achievements: { played: 0, clear: 0, fc: 0, phi: 0 },
+      },
+      {
+        game: 'arcaea',
+        name: 'Sparse Player',
+        potential: null,
+        b50Avg: null,
+        b10Avg: null,
+        lastSyncedAt: null,
       },
     ],
     qr: null,
   };
 }
 
-/** 超长文案：验证截断与横向不溢出。 */
+/** 超长文案：验证截断与横向不溢出（名字走 FittedBox 等价缩放，bio 走 CSS 截断）。 */
 export function buildLongTextCardInput(): PlayerCardInput {
   const long = '非常长的昵称'.repeat(20);
   return {
@@ -301,16 +341,150 @@ export function buildLongTextCardInput(): PlayerCardInput {
     bio: '很长的个人简介'.repeat(40),
     games: [{ name: 'maimai'.repeat(6), icon: gameIcon('maimai') }],
     cards: [
-      {
-        game: 'maimai',
-        title: long,
-        subtitle: '很长的副标题'.repeat(10),
-        rating: '15023150231502315023',
-        fields: [
-          { label: '标签'.repeat(10), value: '值'.repeat(20) },
-          { label: 'B35', value: '14980' },
-        ],
-      },
+      { ...maimaiCard(), name: long, b35Rating: 14980 },
+      { ...phigrosCard(), name: long },
+      { ...arcaeaCard(), name: long },
+    ] as PlayerCardInput['cards'],
+  };
+}
+
+/** 单张 phigros 卡（难度颜色测试用）。 */
+export function buildPhigrosDifficultyCard(difficulty: PhigrosDifficulty): PlayerCardInput {
+  return {
+    displayName: 'Difficulty Test',
+    uid: '1',
+    games: [],
+    cards: [phigrosCard({ difficulty })],
+  };
+}
+
+/** 单张 maimai 卡（调用方动态背景板覆盖静态 frame 的测试用）。 */
+export function buildMaimaiFrameCard(): PlayerCardInput {
+  return {
+    displayName: 'Frame Test',
+    uid: '1',
+    games: [],
+    cards: [
+      maimaiCard({
+        frame: gradientPng(1080, 452, '#3d1e2c', '#0e0a12', { blobs: true, seed: 5 }),
+      }),
     ],
   };
+}
+
+// ───────────────────────────── 自定义素材（task-8） ─────────────────────────────
+
+/**
+ * 生成一张「一眼能看出是自定义素材」的高对比占位图：
+ * 斜条纹 + 左上角实色标签块 + 右下角大圆点，标签文字只为人工看图时辨认。
+ * 颜色/布局与任何 App 默认素材都不相同，便于测试断言「自定义真的覆盖了默认」。
+ */
+function customMarkerPng(
+  width: number,
+  height: number,
+  options: {
+    from: string;
+    to: string;
+    accent: string;
+    label: string;
+    seed?: number;
+  },
+): Buffer {
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, options.from);
+  gradient.addColorStop(1, options.to);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  // 45° 斜条纹（固定间隔，不随尺寸抖动）。
+  const stripe = Math.max(24, Math.round(Math.min(width, height) * 0.045));
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(-Math.PI / 4);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+  const span = Math.ceil(Math.hypot(width, height));
+  for (let x = -span; x < span; x += stripe * 2) {
+    ctx.fillRect(x, -span, stripe, span * 2);
+  }
+  ctx.restore();
+
+  // 左上角实色标签块 + 文字（文字只是标记，测试不依赖字体度量）。
+  const tagHeight = Math.max(48, Math.round(height * 0.14));
+  const tagWidth = Math.min(width, Math.max(240, Math.round(width * 0.62)));
+  ctx.fillStyle = options.accent;
+  ctx.fillRect(0, 0, tagWidth, tagHeight);
+  ctx.fillStyle = '#101014';
+  ctx.font = `bold ${Math.round(tagHeight * 0.5)}px sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(options.label, Math.round(tagHeight * 0.25), Math.round(tagHeight / 2));
+
+  // 右下角大圆点（高对比，便于抽样像素）。
+  const radius = Math.min(width, height) * 0.18;
+  const rand = mulberry32(options.seed ?? 77);
+  ctx.beginPath();
+  ctx.fillStyle = options.accent;
+  ctx.globalAlpha = 0.9;
+  ctx.arc(width - radius - width * 0.04, height - radius - height * 0.05, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  // 几个小色块，避免「大片纯色」被压缩算法抹平。
+  for (let i = 0; i < 6; i += 1) {
+    ctx.fillStyle = i % 2 === 0 ? options.accent : 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(rand() * width * 0.5, height * 0.55 + rand() * height * 0.35, width * 0.06, height * 0.04);
+  }
+  return canvas.toBuffer('image/png');
+}
+
+/** 自定义 maimai 背景板（明显不同于 App frame 455203 / 任何纯色兜底）。 */
+export function customMaimaiFrame(): Buffer {
+  return customMarkerPng(1080, 452, {
+    from: '#ff2d75',
+    to: '#1b0a3c',
+    accent: '#ffd400',
+    label: 'CUSTOM FRAME',
+    seed: 101,
+  });
+}
+
+/** 自定义 phigros 曲绘（明显不同于默认曲绘缓存 / grey900 纯色）。 */
+export function customPhigrosCover(): Buffer {
+  return customMarkerPng(1120, 1120, {
+    from: '#00d5ff',
+    to: '#3b0764',
+    accent: '#ff5d00',
+    label: 'CUSTOM COVER',
+    seed: 202,
+  });
+}
+
+/** 自定义 arcaea 立绘（1080×1080，明显不同于默认 bg_light / 纯色）。 */
+export function customArcaeaArtwork(): Buffer {
+  return customMarkerPng(1080, 1080, {
+    from: '#7cff00',
+    to: '#00121f',
+    accent: '#ff00c8',
+    label: 'CUSTOM ART',
+    seed: 303,
+  });
+}
+
+/** 自定义 arcaea 头像（「名片板」位置）：棋盘格 + 高对比色，明显不同于 person 占位。 */
+export function customArcaeaAvatar(): Buffer {
+  const size = 240;
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+  const cell = size / 12;
+  for (let row = 0; row < 12; row += 1) {
+    for (let column = 0; column < 12; column += 1) {
+      ctx.fillStyle = (row + column) % 2 === 0 ? '#00e5ff' : '#240046';
+      ctx.fillRect(column * cell, row * cell, Math.ceil(cell), Math.ceil(cell));
+    }
+  }
+  ctx.fillStyle = '#ffea00';
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+  return canvas.toBuffer('image/png');
 }

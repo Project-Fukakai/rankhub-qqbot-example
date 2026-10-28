@@ -5,6 +5,11 @@ export {
   DEVICE_CODE_GRANT_TYPE,
   SLOW_DOWN_STEP_SECONDS,
   UNKNOWN_SUBJECT,
+  type MeProfile,
+  type MeProfileCapable,
+  type MeProfileGame,
+  type PhigrosLevelStatistics,
+  type PhigrosStatistics,
   type RankHubClientConfig,
   type RankHubClientDeps,
   type RankHubClientExtended,
@@ -19,5 +24,10 @@ export {
   V1_SUCCESS_CODES,
   type ParsedErrorBody,
 } from './errors.js';
-export { describeProfile, normalizeAssetUrl } from './profile.js';
+export { arcaeaCharacterArtworkUrl, describeProfile, normalizeAssetUrl } from './profile.js';
 export type { ProfileView, ProfileField, GameFormatLike } from './profile.js';
+export {
+  normalizePhigrosDifficulty,
+  PHIGROS_DIFFICULTIES,
+  toProfileAssets,
+} from './wire.js';

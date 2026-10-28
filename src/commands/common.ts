@@ -153,6 +153,16 @@ const RANKHUB_ERROR_TEXT: Record<RankHubError['code'], string> = {
   network_error: 'RankHub 暂时不可用，请稍后再试。',
 };
 
+/**
+ * RankHubError → 用户可见中文文案。
+ *
+ * 供需要拼接自定义前后缀的指令使用（例如 `/me diff` 写回失败要说清"当前难度未变更"），
+ * 同时保证错误码文案只有一份。
+ */
+export function rankHubErrorText(error: RankHubError): string {
+  return RANKHUB_ERROR_TEXT[error.code];
+}
+
 /** 把 RankHubError 翻译成用户可见文案；未知异常返回 false（交给 dispatcher 兜底）。 */
 export async function replyRankHubError(
   services: CommandServices,

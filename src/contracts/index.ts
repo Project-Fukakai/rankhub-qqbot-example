@@ -89,6 +89,22 @@ export interface GamePlayer {
   native: Record<string, unknown> | null;
 }
 
+/**
+ * 一条游戏档案的展示资源绝对 URL（v1 `GameProfileDto.assets`）。
+ *
+ * 冻结契约：`RankHubWorkspace/docs/V1-PROFILE-ASSETS.md` §2。三个字段一律
+ * `string | null`——`null` 表示「该游戏没有这个概念 / 取不到」，不是「未实现」；
+ * 老实例完全没有 `assets` 字段时由 wire 归一成「三字段全 null」，调用方据此回退本地规则。
+ */
+export interface GameProfileAssets {
+  /** 头像绝对 URL（maimai 头像 / phigros 头像 / arcaea 头像）。 */
+  avatarUrl: string | null;
+  /** 背景绝对 URL（maimai 背景板 frame / phigros 曲绘 / arcaea 名片板）。 */
+  backgroundUrl: string | null;
+  /** 立绘绝对 URL（目前只有 arcaea 搭档立绘；其它游戏恒 null）。 */
+  characterArtworkUrl: string | null;
+}
+
 export interface GameProfile {
   profileId: string;
   game: string;
@@ -98,6 +114,8 @@ export interface GameProfile {
   syncCapable: boolean;
   lastSyncedAt: string | null;
   updatedAt: string;
+  /** 展示资源（v1 新增；缺失时三字段全 null，见 `GameProfileAssets`）。 */
+  assets: GameProfileAssets;
 }
 
 export interface GameScore {
@@ -271,18 +289,71 @@ export interface PlayerCardGameIcon {
   icon: Buffer;
 }
 
-/** 名片里的一张游戏卡（maimai / phigros / arcaea）。 */
-export interface PlayerCardGameSection {
-  game: string;
-  title: string;
-  /** 总分文本（已格式化，如 `15370` / `13.615`）；null 时不展示。 */
-  rating: string | null;
-  subtitle?: string | null;
-  background?: Buffer | null;
+/** Phigros 难度（与 App `PhigrosDifficulty` / 后端偏好枚举逐字一致）。 */
+export type PhigrosDifficulty = 'EZ' | 'HD' | 'IN' | 'AT';
+
+/**
+ * 名片里的玩家卡片（maimai / phigros / arcaea 的判别联合）。
+ *
+ * 版式 1:1 对齐 App「我的」页 `profileCardBuilder`：
+ * - maimai → `PlayerInfoCard`（背景板 / 方形头像 / DX Rating 徽章 / 名字条 / B35+B15 / 最近同步）
+ * - phigros → `PhigrosPlayerCard`（曲绘 / 左上 RKS+课题模式+名字 / 右下 CLEAR·FC·PHI / 难度平行四边形）
+ * - arcaea → `ArcaeaPlayerInfoCard`（bg_light + hidden + banner / 立绘 / 头像+PTT 徽章 / B50+B10 / 最近同步）
+ *
+ * 所有图片都是调用方拉好的 Buffer：渲染器不解析 URL、不发网络请求。
+ */
+export interface PlayerCardMaimaiCardData {
+  game: 'maimai';
+  /** 玩家名（原样，空串由渲染器决定占位）。 */
+  name: string;
+  /** DX Rating（整数）。 */
+  rating: number | null;
+  /** 往期版本 B35。 */
+  b35Rating: number | null;
+  /** 当期版本 B15。 */
+  b15Rating: number | null;
   avatar?: Buffer | null;
-  /** 游戏特定展示字段（2-4 条，调用方决定 label/value）。 */
-  fields: { label: string; value: string }[];
+  /** 背景板（App 默认 frame 455203 或调用方拉的 frame）。 */
+  frame?: Buffer | null;
+  lastSyncedAt?: string | null;
 }
+
+export interface PlayerCardPhigrosCardData {
+  game: 'phigros';
+  name: string;
+  /** 卡片大号数字：B30 平均 RKS（与 App `_b30Average` 一致，4 位小数）。 */
+  rks: number | null;
+  /** 课题模式三位数（百位段位 + 后两位难度）；0/缺省 = 不画徽章。 */
+  challengeModeRank: number | null;
+  avatar?: Buffer | null;
+  /** 曲绘背景（`backgroundSongId` → App 曲绘 URL）。 */
+  background?: Buffer | null;
+  /** 当前展示难度（来自用户偏好）。 */
+  difficulty: PhigrosDifficulty;
+  /** 该难度下的全谱面达成统计（后端 statistics.levels[difficulty]）。 */
+  achievements: { played: number; clear: number; fc: number; phi: number };
+}
+
+export interface PlayerCardArcaeaCardData {
+  game: 'arcaea';
+  name: string;
+  /** Potential。 */
+  potential: number | null;
+  /** Best 50 平均。 */
+  b50Avg: number | null;
+  /** Best 10 平均。 */
+  b10Avg: number | null;
+  /** 档案头像（为空时渲染器回退立绘）。 */
+  avatar?: Buffer | null;
+  /** 搭档 1080px 立绘（`arc/char/1080/{character}.png`）。 */
+  characterArtwork?: Buffer | null;
+  lastSyncedAt?: string | null;
+}
+
+export type PlayerCardGameCard =
+  | PlayerCardMaimaiCardData
+  | PlayerCardPhigrosCardData
+  | PlayerCardArcaeaCardData;
 
 /** `/me` 完整玩家名片。 */
 export interface PlayerCardRenderInput {
@@ -292,10 +363,19 @@ export interface PlayerCardRenderInput {
   banner?: Buffer | null;
   avatar?: Buffer | null;
   games: PlayerCardGameIcon[];
-  cards: PlayerCardGameSection[];
+  cards: PlayerCardGameCard[];
   /** 隐私为公开时才传；null/缺省 = 不画二维码。 */
   qr?: Buffer | null;
 }
+
+/** 用户显示偏好（后端 `/v1/me/display-preferences` 的 data）。 */
+export interface DisplayPreferences {
+  phigrosDifficulty: PhigrosDifficulty;
+}
+
+export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
+  phigrosDifficulty: 'IN',
+};
 
 /** arcaea B50/B30 海报。 */
 export interface ArcaeaB50RenderInput {

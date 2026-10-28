@@ -99,14 +99,39 @@ export class HttpTransport {
    * 429 → 按 Retry-After 退避后重试一次；第二次仍失败则抛 `rate_limited`。
    */
   async getV1(url: string, accessToken: string): Promise<unknown> {
-    const headers = { accept: 'application/json', authorization: `Bearer ${accessToken}` };
-    const first = await this.send(url, { method: 'GET', headers });
+    return this.exchangeV1(url, {
+      method: 'GET',
+      headers: { accept: 'application/json', authorization: `Bearer ${accessToken}` },
+    });
+  }
+
+  /**
+   * PATCH 一个 v1 envelope 端点（JSON body）并返回 `data`。
+   *
+   * 与 `getV1` 共用同一套 envelope 判定 / 429 单次重试；除 429（服务端明确没处理请求）外
+   * 写请求不做盲目重试。
+   */
+  async patchV1(url: string, accessToken: string, body: unknown): Promise<unknown> {
+    return this.exchangeV1(url, {
+      method: 'PATCH',
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** v1 envelope 往返（含 429 单次退避）。 */
+  private async exchangeV1(url: string, init: RequestInit): Promise<unknown> {
+    const first = await this.send(url, init);
     const firstError = envelopeError(first);
     if (firstError === null) return envelopeData(first);
     if (firstError.code === 'rate_limited') {
       const seconds = Math.max(firstError.retryAfterSeconds ?? 1, 0);
       await this.sleep(Math.min(seconds * 1000, this.maxRetryDelayMs));
-      const second = await this.send(url, { method: 'GET', headers });
+      const second = await this.send(url, init);
       const secondError = envelopeError(second);
       if (secondError !== null) throw secondError;
       return envelopeData(second);

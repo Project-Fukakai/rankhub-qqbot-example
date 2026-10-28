@@ -11,6 +11,8 @@ const HELP_TEXT = [
   '/bind [UID] 或 /绑定 —— 绑定 RankHub 账号（App 扫码确认）',
   '/unbind 或 /解绑 —— 解除绑定',
   '/me 或 /我的 —— 生成玩家名片（账号 + maimai/phigros/arcaea 档案 + 二维码）',
+  '/me diff —— 查看 Phigros 卡片当前展示难度',
+  '/me diff <EZ|HD|IN|AT> —— 切换 Phigros 卡片难度（App 与机器人共享该偏好）',
   '/b50 —— 生成 maimai B50 图片',
   '/arc 或 /arcaea —— 生成 Arcaea B50 图片',
   '/rks —— 生成 Phigros RKS 图片',

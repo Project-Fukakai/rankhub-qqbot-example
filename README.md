@@ -20,8 +20,9 @@
 | `/help` | 指令与绑定说明 |
 | `/bind [UID]` | 绑定 RankHub：私聊直接 `/bind`，群聊 `/bind <UID>`；扫机器人发的二维码在 App 内确认 |
 | `/unbind` | 撤销令牌并删除本地绑定 |
-| `/me` | 已绑定身份与各游戏档案摘要 |
 | `/me` | **玩家名片**：账号头像/背景 + 已绑定游戏图标条 + maimai/phigros/arcaea 卡片 + 公开账号二维码 |
+| `/me diff` | 查看 Phigros 卡片当前展示难度（EZ/HD/IN/AT，默认 IN） |
+| `/me diff <EZ\|HD\|IN\|AT>` | 切换 Phigros 卡片难度（写回 RankHub 用户偏好，App 与机器人共享） |
 | `/b50` | maimai B50 图片（照搬 [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX) 的绘制） |
 | `/arc` | Arcaea B50 海报（移植 [best-posters](https://github.com/Project-Fukakai) 的 arcaea 版式） |
 | `/rks` | phigros RKS / b19 图片（照搬 [phi-plugin](https://github.com/Catrong/phi-plugin) 的 b19 模板） |

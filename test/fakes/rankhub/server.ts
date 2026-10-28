@@ -77,6 +77,12 @@ export interface FakeRankHubState {
   games: Record<string, unknown>[];
   profiles: Record<string, Record<string, unknown>[]>;
   bests: Record<string, Record<string, unknown>>;
+  /** phigros 逐难度统计：`profileId → statistics`（路由缺省回落到默认形状）。 */
+  statistics: Record<string, Record<string, unknown>>;
+  /** 用户显示偏好（`/v1/me/display-preferences` 的 data，PATCH 会就地改写）。 */
+  displayPreferences: { phigrosDifficulty: string };
+  /** `false` 模拟「老实例」：profile 响应里没有 `assets` 字段（测试回退规则用）。 */
+  includeAssets: boolean;
   /** `cursor`（默认页用空串）→ 页面。 */
   scoresPages: Record<string, FakeScorePage>;
   firstPartyOnly: Set<string>;
@@ -91,6 +97,8 @@ export interface RecordedRequest {
   query: Record<string, string>;
   /** 表单字段；敏感字段值已脱敏成 `[redacted]`。 */
   form: Record<string, string>;
+  /** JSON body（PATCH 等）；敏感字段值已脱敏成 `[redacted]`。 */
+  json: Record<string, unknown>;
   hasAuthorization: boolean;
 }
 
@@ -102,15 +110,42 @@ export interface FakeRankHubOptions {
   games?: Record<string, unknown>[];
   profiles?: Record<string, Record<string, unknown>[]>;
   bests?: Record<string, Record<string, unknown>>;
+  statistics?: Record<string, Record<string, unknown>>;
+  displayPreferences?: { phigrosDifficulty: string };
+  /** `false` 模拟老实例（profile 不带 `assets`）；默认 true。 */
+  includeAssets?: boolean;
   scoresPages?: Record<string, FakeScorePage>;
   userinfo?: Record<string, unknown> | null;
 }
 
 const SENSITIVE_FORM_KEY = /(token|secret|code|password)/i;
 
+/** 后端 display-preferences 允许的难度值（契约 §2.1）。 */
+const PHIGROS_DIFFICULTY_LABELS = new Set(['EZ', 'HD', 'IN', 'AT']);
+
+/**
+ * 假图片路径：`defaultProfiles()` 的 `assets` 夹具把 URL 指向
+ * `{{origin}}/fake/image.png?...`（响应时替换 origin），E2E 因此全程不联网。
+ */
+export const FAKE_IMAGE_PATH = '/fake/image.png';
+
+/** 1x1 透明 PNG（固定字节）。 */
+export const ONE_PX_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PzWvWQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 function redactForm(form: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(form)) {
+    out[key] = SENSITIVE_FORM_KEY.test(key) ? '[redacted]' : value;
+  }
+  return out;
+}
+
+function redactJson(json: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(json)) {
     out[key] = SENSITIVE_FORM_KEY.test(key) ? '[redacted]' : value;
   }
   return out;
@@ -149,7 +184,12 @@ function defaultProfiles(): Record<string, Record<string, unknown>[]> {
       {
         profileId: 'profile-mai-1',
         game: 'maimai',
-        player: { name: 'Fake Player', rating: 15000, native: { course_rank: 10 } },
+        // v1 adapter 的真实 native 形状（camelCase）：展示字段 + 头像 URL。
+        player: {
+          name: 'Fake Player',
+          rating: 15000,
+          native: { course_rank: 10, class_rank: 5, star: 12 },
+        },
         isPublic: true,
         origin: 'user',
         createdByClientId: null,
@@ -157,13 +197,25 @@ function defaultProfiles(): Record<string, Record<string, unknown>[]> {
         lastSyncedAt: '2026-10-01T00:00:00Z',
         createdAt: '2026-09-01T00:00:00Z',
         updatedAt: '2026-10-01T00:00:00Z',
+        // v1 `GameProfileDto.assets`（契约 V1-PROFILE-ASSETS §2）：URL 用 `{{origin}}`
+        // 占位，`sendEnvelope()` 在响应时替换成本假服务 origin（E2E 不访问外网）。
+        assets: {
+          avatarUrl: '{{origin}}/fake/image.png?game=maimai&asset=avatar',
+          backgroundUrl: '{{origin}}/fake/image.png?game=maimai&asset=frame',
+          characterArtworkUrl: null,
+        },
       },
     ],
     arcaea: [
       {
         profileId: 'profile-arc-1',
         game: 'arcaea',
-        player: { name: 'Fake Arc Player', rating: 12.34, native: { character: 1 } },
+        // `b50Avg` / `b10Avg` 是 v1 native 的评级均值字段（b10Avg 由契约 2.3 新增）。
+        player: {
+          name: 'Fake Arc Player',
+          rating: 12.34,
+          native: { b30Avg: 11.2, b50Avg: 10.8, b10Avg: 12.1 },
+        },
         isPublic: true,
         origin: 'user',
         createdByClientId: null,
@@ -171,13 +223,22 @@ function defaultProfiles(): Record<string, Record<string, unknown>[]> {
         lastSyncedAt: '2026-10-01T00:00:00Z',
         createdAt: '2026-09-01T00:00:00Z',
         updatedAt: '2026-10-01T00:00:00Z',
+        assets: {
+          avatarUrl: '{{origin}}/fake/image.png?game=arcaea&asset=avatar',
+          backgroundUrl: '{{origin}}/fake/image.png?game=arcaea&asset=nameplate',
+          characterArtworkUrl: '{{origin}}/fake/image.png?game=arcaea&asset=artwork',
+        },
       },
     ],
     phigros: [
       {
         profileId: 'profile-phi-1',
         game: 'phigros',
-        player: { name: 'Fake Player', rating: 15.2, native: null },
+        player: {
+          name: 'Fake Player',
+          rating: 15.2,
+          native: { challengeModeRank: 316, gameVersion: '3.7.0' },
+        },
         isPublic: false,
         origin: 'app',
         createdByClientId: 'cli_fake',
@@ -185,6 +246,11 @@ function defaultProfiles(): Record<string, Record<string, unknown>[]> {
         lastSyncedAt: null,
         createdAt: '2026-09-01T00:00:00Z',
         updatedAt: '2026-10-02T00:00:00Z',
+        assets: {
+          avatarUrl: '{{origin}}/fake/image.png?game=phigros&asset=avatar',
+          backgroundUrl: '{{origin}}/fake/image.png?game=phigros&asset=background',
+          characterArtworkUrl: null,
+        },
       },
     ],
   };
@@ -196,6 +262,79 @@ function defaultGames(): Record<string, unknown>[] {
     { game: 'phigros', read: true, pushProfile: true, pushScores: true, deletionRequest: true },
   ];
 }
+
+/** 生成一条 phigros 成绩（rks 固定，便于断言 B30 平均）。 */
+function phigrosScore(id: string, rks: number): Record<string, unknown> {
+  return {
+    scoreId: id,
+    songId: id,
+    songName: `Fake Phi ${id}`,
+    type: null,
+    difficulty: 'IN',
+    levelIndex: 2,
+    level: '15',
+    achievements: 99.5,
+    score: 1000000,
+    rating: rks,
+    rank: 'phi',
+    dxScore: null,
+    dxStar: null,
+    fc: 'phi',
+    fs: null,
+    playTime: null,
+    native: { constant: 15.0 },
+  };
+}
+
+/**
+ * phigros bests（契约：`totals.rks` / `buckets.phi` / `buckets.best30`）。
+ *
+ * ϕ 桶 3 首 + best30 桶 27 首、全部 rks 15.0 ⇒ B30 平均 = 450 / 30 = 15（便于 e2e 断言）。
+ */
+function defaultPhigrosBests(): Record<string, unknown> {
+  return {
+    game: 'phigros',
+    computedAt: '2026-10-20T00:00:00Z',
+    totals: { rks: 15, officialRks: 15.2 },
+    buckets: [
+      {
+        key: 'phi',
+        label: 'ϕ',
+        total: 45,
+        items: ['phi-1', 'phi-2', 'phi-3'].map((id) => phigrosScore(id, 15)),
+      },
+      {
+        key: 'best30',
+        label: 'Best 30',
+        total: 405,
+        items: Array.from({ length: 27 }, (_, index) =>
+          phigrosScore(`best-${String(index + 1)}`, 15),
+        ),
+      },
+    ],
+  };
+}
+
+/** phigros 逐难度统计（契约 §2.2 的 `data.statistics` 形状）。 */
+const DEFAULT_PHIGROS_STATISTICS: Record<string, unknown> = {
+  officialRks: 15.2,
+  calculatedRks: 15,
+  b19AverageRks: 15.05,
+  challengeModeRank: 316,
+  challengeRankLevel: 3,
+  challengeDifficulty: 16,
+  totalScores: 128,
+  fcCount: 42,
+  phiCount: 3,
+  ratings: { ϕ: 3, S: 12 },
+  levels: {
+    EZ: { played: 10, clear: 9, fc: 6, phi: 2 },
+    HD: { played: 20, clear: 18, fc: 12, phi: 4 },
+    IN: { played: 30, clear: 25, fc: 15, phi: 5 },
+    AT: { played: 5, clear: 3, fc: 1, phi: 0 },
+  },
+  lastSyncedAt: null,
+};
 
 function defaultBests(): Record<string, Record<string, unknown>> {
   return {
@@ -218,7 +357,18 @@ function defaultBests(): Record<string, Record<string, unknown>> {
         },
       ],
     },
+    phigros: defaultPhigrosBests(),
   };
+}
+
+/**
+ * 模拟「老实例」：把 profile 上的 `assets` 删掉（响应里完全没有该字段），
+ * 用来锁定客户端的本地 URL 回退路径。
+ */
+function stripProfileAssets(profiles: Record<string, Record<string, unknown>[]>): void {
+  for (const list of Object.values(profiles)) {
+    for (const profile of list) delete profile['assets'];
+  }
 }
 
 /** 可启动的假 RankHub。用 `FakeRankHub.start()` 创建。 */
@@ -230,6 +380,9 @@ export class FakeRankHub {
   private port = 0;
 
   private constructor(options: FakeRankHubOptions) {
+    const profiles = options.profiles ?? defaultProfiles();
+    const includeAssets = options.includeAssets !== false;
+    if (!includeAssets) stripProfileAssets(profiles);
     this.state = {
       clientId: options.clientId ?? 'rankhub-qqbot',
       clientSecret: options.clientSecret ?? 'fake-client-secret',
@@ -254,8 +407,11 @@ export class FakeRankHub {
       deviceRequests: 0,
       refreshRequests: 0,
       games: options.games ?? defaultGames(),
-      profiles: options.profiles ?? defaultProfiles(),
+      profiles,
       bests: options.bests ?? defaultBests(),
+      statistics: options.statistics ?? { 'profile-phi-1': DEFAULT_PHIGROS_STATISTICS },
+      displayPreferences: options.displayPreferences ?? { phigrosDifficulty: 'IN' },
+      includeAssets,
       scoresPages: options.scoresPages ?? {
         '': { items: [DEFAULT_SCORE], nextCursor: null, hasMore: false },
       },
@@ -294,6 +450,11 @@ export class FakeRankHub {
 
   get apiBase(): string {
     return this.origin;
+  }
+
+  /** 假图片的绝对 URL（临时改写夹具时用；默认 assets 夹具已自动指向本机）。 */
+  get fakeImageUrl(): string {
+    return `${this.origin}${FAKE_IMAGE_PATH}`;
   }
 
   /** 测试里手动推进设备码状态（deny / expire / 直接 approve）。 */
@@ -347,7 +508,8 @@ export class FakeRankHub {
     const url = new URL(req.url ?? '/', this.origin);
     let form: Record<string, string> = {};
     let json: Record<string, unknown> = {};
-    if (req.method === 'POST') {
+    // 有 body 的方法都要读：PATCH 是 `/v1/me/display-preferences` 的写路径。
+    if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT') {
       const raw = await readBody(req);
       const contentType = req.headers['content-type'] ?? '';
       if (contentType.includes('application/json')) {
@@ -365,6 +527,7 @@ export class FakeRankHub {
       path: url.pathname,
       query: Object.fromEntries(url.searchParams),
       form: redactForm(form),
+      json: redactJson(json),
       hasAuthorization: typeof req.headers.authorization === 'string',
     });
     try {
@@ -405,6 +568,13 @@ export class FakeRankHub {
       this.handleRevoke(res, form);
       return;
     }
+    if (
+      (method === 'GET' || method === 'PATCH') &&
+      path === '/v1/me/display-preferences'
+    ) {
+      this.handleDisplayPreferences(req, res, method, json);
+      return;
+    }
     if (method === 'GET' && path === '/v1/me/profile') {
       this.sendEnvelope(res, 200, 'common.ok', 'OK', {
         uid: '100234567',
@@ -413,17 +583,9 @@ export class FakeRankHub {
         avatarUrl: null,
         bannerUrl: null,
         isPublic: true,
-        games: [
-          {
-            game: 'maimai',
-            profileId: 'profile-mai-1',
-            playerName: 'Fake Player',
-            rating: 15000,
-            isPublic: true,
-            avatarUrl: null,
-            backgroundUrl: null,
-          },
-        ],
+        // 契约 §2.1：`/v1/me/profile` 带上 displayPreferences，省机器人一次往返。
+        displayPreferences: { ...this.state.displayPreferences },
+        games: this.meProfileGames(),
       });
       return;
     }
@@ -435,12 +597,18 @@ export class FakeRankHub {
       this.handleGames(req, res);
       return;
     }
-    const match = /^\/v1\/games\/([^/]+)\/profiles(?:\/([^/]+)\/(bests|scores))?$/.exec(path);
+    const match =
+      /^\/v1\/games\/([^/]+)\/profiles(?:\/([^/]+)\/(bests|scores|statistics))?$/.exec(path);
     if (method === 'GET' && match !== null) {
       const game = decodeURIComponent(match[1] ?? '');
       const profileId = match[2] === undefined ? null : decodeURIComponent(match[2]);
       const kind = match[3] ?? 'profiles';
       this.handleGameResource(req, res, url, game, profileId, kind);
+      return;
+    }
+    // 假图片：E2E 测名片素材下载时把资产 URL 指到本机，避免任何外网请求。
+    if (method === 'GET' && path === FAKE_IMAGE_PATH) {
+      this.sendImage(res, ONE_PX_PNG);
       return;
     }
     this.sendEnvelope(res, 404, 'common.notFound', `假服务没有这条路由：${method} ${path}`, null);
@@ -694,6 +862,119 @@ export class FakeRankHub {
     this.sendJson(res, 200, this.state.userinfo);
   }
 
+  // ─────────────────────────── /v1/me/display-preferences ───────────────────────────
+
+  /**
+   * 用户显示偏好（契约 §2.1）：GET 读、PATCH 写（允许只传部分键，未知键忽略）。
+   * 非法难度值 → 400 `common.invalidArgument`（与后端同一口径）。
+   */
+  private handleDisplayPreferences(
+    req: IncomingMessage,
+    res: ServerResponse,
+    method: string,
+    json: Record<string, unknown>,
+  ): void {
+    if (!this.isAuthorized(req)) {
+      this.sendEnvelope(res, 401, 'auth.unauthenticated', '未认证', null);
+      return;
+    }
+    if (method === 'PATCH') {
+      const requested = json['phigrosDifficulty'];
+      if (requested !== undefined) {
+        const normalized =
+          typeof requested === 'string' ? requested.trim().toUpperCase() : '';
+        if (!PHIGROS_DIFFICULTY_LABELS.has(normalized)) {
+          this.sendEnvelope(
+            res,
+            400,
+            'common.invalidArgument',
+            'phigrosDifficulty 必须是 EZ / HD / IN / AT 之一',
+            null,
+          );
+          return;
+        }
+        this.state.displayPreferences = {
+          ...this.state.displayPreferences,
+          phigrosDifficulty: normalized,
+        };
+      }
+    }
+    this.sendEnvelope(res, 200, 'common.ok', '成功', { ...this.state.displayPreferences });
+  }
+
+  /**
+   * `/v1/me/profile` 的 `games[]`。
+   *
+   * 契约 V1-PROFILE-ASSETS §2：增加 `characterArtworkUrl`；maimai 的 `backgroundUrl`
+   * 从 null 变为背景板（frame）URL。`includeAssets === false` 时按**老实例**形状返回
+   * （只有 avatarUrl/backgroundUrl 且全 null，没有 characterArtworkUrl 字段）。
+   */
+  private meProfileGames(): Record<string, unknown>[] {
+    if (!this.state.includeAssets) {
+      return [
+        {
+          game: 'maimai',
+          profileId: 'profile-mai-1',
+          playerName: 'Fake Player',
+          rating: 15000,
+          isPublic: true,
+          avatarUrl: null,
+          backgroundUrl: null,
+        },
+        {
+          game: 'phigros',
+          profileId: 'profile-phi-1',
+          playerName: 'Fake Player',
+          rating: 15.2,
+          isPublic: false,
+          avatarUrl: null,
+          backgroundUrl: null,
+        },
+        {
+          game: 'arcaea',
+          profileId: 'profile-arc-1',
+          playerName: 'Fake Arc Player',
+          rating: 12.34,
+          isPublic: true,
+          avatarUrl: null,
+          backgroundUrl: null,
+        },
+      ];
+    }
+    return [
+      {
+        game: 'maimai',
+        profileId: 'profile-mai-1',
+        playerName: 'Fake Player',
+        rating: 15000,
+        isPublic: true,
+        avatarUrl: '{{origin}}/fake/image.png?game=maimai&asset=avatar',
+        backgroundUrl: '{{origin}}/fake/image.png?game=maimai&asset=frame',
+        characterArtworkUrl: null,
+      },
+      {
+        game: 'phigros',
+        profileId: 'profile-phi-1',
+        playerName: 'Fake Player',
+        rating: 15.2,
+        isPublic: false,
+        avatarUrl: '{{origin}}/fake/image.png?game=phigros&asset=avatar',
+        backgroundUrl: '{{origin}}/fake/image.png?game=phigros&asset=background',
+        characterArtworkUrl: null,
+      },
+      {
+        game: 'arcaea',
+        profileId: 'profile-arc-1',
+        playerName: 'Fake Arc Player',
+        rating: 12.34,
+        isPublic: true,
+        avatarUrl: '{{origin}}/fake/image.png?game=arcaea&asset=avatar',
+        backgroundUrl: '{{origin}}/fake/image.png?game=arcaea&asset=nameplate',
+        characterArtworkUrl: '{{origin}}/fake/image.png?game=arcaea&asset=artwork',
+      },
+    ];
+  }
+
   // ─────────────────────────────── /v1/games ───────────────────────────────
 
   private handleGames(req: IncomingMessage, res: ServerResponse): void {
@@ -774,6 +1055,21 @@ export class FakeRankHub {
       return;
     }
 
+    if (kind === 'statistics') {
+      // 契约 §2.2：只有 phigros 实现 `getStatistics`；其它游戏 404（与"不支持"口径一致）。
+      if (game !== 'phigros') {
+        this.sendEnvelope(res, 404, 'common.notFound', `游戏 ${game} 不支持 statistics`, null);
+        return;
+      }
+      const statistics = this.state.statistics[profileId];
+      if (statistics === undefined) {
+        this.sendEnvelope(res, 404, 'common.notFound', '档案不存在', null);
+        return;
+      }
+      this.sendEnvelope(res, 200, 'common.ok', '成功', { game: 'phigros', statistics });
+      return;
+    }
+
     // scores
     const limitRaw = url.searchParams.get('limit');
     let limit: number | null = null;
@@ -812,6 +1108,15 @@ export class FakeRankHub {
 
   // ──────────────────────────────── 响应工具 ────────────────────────────────
 
+  /** 返回图片字节（`fetchImage` 只接受 `image/*`）。 */
+  private sendImage(res: ServerResponse, image: Buffer): void {
+    res.writeHead(200, {
+      'content-type': 'image/png',
+      'content-length': image.length,
+    });
+    res.end(image);
+  }
+
   private sendJson(
     res: ServerResponse,
     status: number,
@@ -839,10 +1144,33 @@ export class FakeRankHub {
     this.sendJson(
       res,
       status,
-      { code, message, data, requestId: `${this.requestIdPrefix}${this.requestSeq}` },
+      {
+        code,
+        message,
+        // 夹具里的 `{{origin}}` 占位在本机 origin 上解析：E2E 素材下载不访问外网。
+        data: resolvePlaceholders(data, this.origin),
+        requestId: `${this.requestIdPrefix}${this.requestSeq}`,
+      },
       headers,
     );
   }
+}
+
+/**
+ * 递归替换夹具字符串里的 `{{origin}}` 占位（假服务端口在构造时未知，只能响应时解析）。
+ * 只影响测试夹具；真实客户端看到的是绝对 URL。
+ */
+function resolvePlaceholders(value: unknown, origin: string): unknown {
+  if (typeof value === 'string') return value.replaceAll('{{origin}}', origin);
+  if (Array.isArray(value)) return value.map((item) => resolvePlaceholders(item, origin));
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = resolvePlaceholders(item, origin);
+    }
+    return out;
+  }
+  return value;
 }
 
 function bearerToken(req: IncomingMessage): string | null {

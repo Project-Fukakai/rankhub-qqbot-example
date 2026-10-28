@@ -81,8 +81,10 @@ describe('RankHub /v1/games 客户端', () => {
       origin: 'app',
       isPublic: false,
       syncCapable: false,
+      // `lastSyncedAt` 缺失保持 null（不编造时间）。
       lastSyncedAt: null,
-      player: { native: null },
+      // v1 adapter 的真实 native 形状（camelCase 展示字段；测试夹具见 fakes/rankhub/server.ts）。
+      player: { native: { challengeModeRank: 316, gameVersion: '3.7.0' } },
     });
   });
 

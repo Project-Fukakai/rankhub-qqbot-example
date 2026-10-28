@@ -185,7 +185,7 @@ describe('E2E 指令管线', () => {
   );
 
   it(
-    '/me：渲染玩家名片（账号资料 + 游戏卡 + 二维码）',
+    '/me：渲染玩家名片（三张卡按契约映射 + v1 assets 图片 + 偏好难度 + 二维码）',
     async () => {
       harness = await startHarness();
       await harness.seedBinding();
@@ -198,13 +198,145 @@ describe('E2E 指令管线', () => {
       const input = harness.renderer.cardCalls[0]!;
       expect(input.displayName).toBe('Fake User');
       expect(input.uid).toBe('100234567');
-      expect(input.games.map((game) => game.name)).toContain('maimai DX');
-      expect(input.cards.map((card) => card.game)).toEqual(
-        expect.arrayContaining(['maimai', 'phigros', 'arcaea']),
-      );
+      expect(input.games.map((game) => game.name)).toEqual(['maimai DX', 'Phigros', 'Arcaea']);
+      expect(input.cards.map((card) => card.game)).toEqual(['maimai', 'phigros', 'arcaea']);
+
+      const [maimai, phigros, arcaea] = input.cards as [
+        import('../../src/contracts/index.js').PlayerCardMaimaiCardData,
+        import('../../src/contracts/index.js').PlayerCardPhigrosCardData,
+        import('../../src/contracts/index.js').PlayerCardArcaeaCardData,
+      ];
+      expect(maimai).toMatchObject({
+        rating: 15000,
+        b15Rating: 12000,
+        b35Rating: null,
+        lastSyncedAt: '2026-10-01T00:00:00Z',
+      });
+      // v1 assets（契约 V1-PROFILE-ASSETS §2）：头像 + 用户背景板（frame）都拉成了 Buffer。
+      expect(maimai.avatar).toBeInstanceOf(Buffer);
+      expect(maimai.frame).toBeInstanceOf(Buffer);
+
+      // phigros：ϕ 3 首 + best30 27 首、全部 rks 15 ⇒ B30 平均 15；难度取偏好 IN。
+      expect(phigros).toMatchObject({
+        rks: 15,
+        challengeModeRank: 316,
+        difficulty: 'IN',
+        achievements: { played: 30, clear: 25, fc: 15, phi: 5 },
+      });
+      // 曲线背景 = assets.backgroundUrl（曲绘）；头像 = assets.avatarUrl。
+      expect(phigros.avatar).toBeInstanceOf(Buffer);
+      expect(phigros.background).toBeInstanceOf(Buffer);
+
+      expect(arcaea).toMatchObject({ potential: 12.34, b50Avg: 10.8, b10Avg: 12.1 });
+      // arcaea 头像 + 搭档立绘（assets.characterArtworkUrl）。
+      expect(arcaea.avatar).toBeInstanceOf(Buffer);
+      expect(arcaea.characterArtwork).toBeInstanceOf(Buffer);
+
       // 账号公开 ⇒ 传入二维码 PNG Buffer。
       expect(input.qr).toBeInstanceOf(Buffer);
       expect(input.qr!.length).toBeGreaterThan(100);
+
+      // 新端点确实被调用（契约 §2.1 / §2.2）。
+      const paths = harness.fakeRankHub.state.requests.map((request) => request.path);
+      expect(paths).toContain('/v1/me/profile');
+      expect(paths).toContain('/v1/games/phigros/profiles/profile-phi-1/statistics');
+
+      // 素材全部来自假服务的本机图片路由（E2E 不访问外网），且每个 assets URL 都被拉过。
+      const imageQueries = harness.fakeRankHub.state.requests
+        .filter((request) => request.path === '/fake/image.png')
+        .map((request) => `${request.query['game'] ?? ''}:${request.query['asset'] ?? ''}`);
+      expect(imageQueries).toEqual(
+        expect.arrayContaining([
+          'maimai:avatar',
+          'maimai:frame',
+          'phigros:avatar',
+          'phigros:background',
+          'arcaea:avatar',
+          'arcaea:artwork',
+        ]),
+      );
+    },
+    20_000,
+  );
+
+  it(
+    '/me 老实例（profile 无 assets）：卡片不带图、不请求素材、不崩',
+    async () => {
+      harness = await startHarness({ rankhub: { includeAssets: false } });
+      await harness.seedBinding();
+
+      harness.emitGroup('/me', 'msg-me-no-assets-1');
+      await harness.waitForImageMessage();
+      const input = harness.renderer.cardCalls[0]!;
+      expect(input.cards.map((card) => card.game)).toEqual(['maimai', 'phigros', 'arcaea']);
+
+      // 老实例：assets 全 null，且默认夹具的 native 也没有可拼的本地键 ⇒ 不带任何图片。
+      for (const card of input.cards) expect(card).not.toHaveProperty('avatar');
+      expect(input.cards[0]).not.toHaveProperty('frame');
+      expect(input.cards[1]).not.toHaveProperty('background');
+      expect(input.cards[2]).not.toHaveProperty('characterArtwork');
+
+      // 没有发任何素材请求（URL 全是 null）。
+      expect(
+        harness.fakeRankHub.state.requests.filter((request) => request.path === '/fake/image.png'),
+      ).toHaveLength(0);
+    },
+    20_000,
+  );
+
+  it(
+    '/me diff：回当前难度；/me diff <难度> 写回后端偏好并生效',
+    async () => {
+      harness = await startHarness();
+      await harness.seedBinding();
+      // 起点 HD：随后 `/me diff IN` 应把后端偏好改回 IN。
+      harness.fakeRankHub.state.displayPreferences = { phigrosDifficulty: 'HD' };
+
+      harness.emitGroup('/me diff', 'msg-me-diff-1');
+      const showMessages = await harness.waitForMessages('msg-me-diff-1', 1);
+      const showText = String(showMessages[0]!.body.content);
+      expect(showText).toContain('当前难度：HD');
+      expect(showText).toContain('EZ / HD / IN / AT');
+
+      harness.emitGroup('/me diff in', 'msg-me-diff-2');
+      const setMessages = await harness.waitForMessages('msg-me-diff-2', 1);
+      expect(String(setMessages[0]!.body.content)).toContain('已把 Phigros 卡片难度切换为 IN');
+      expect(harness.fakeRankHub.state.displayPreferences).toEqual({ phigrosDifficulty: 'IN' });
+
+      const patchRequest = harness.fakeRankHub.state.requests.find(
+        (request) =>
+          request.path === '/v1/me/display-preferences' && request.method === 'PATCH',
+      );
+      expect(patchRequest?.json).toEqual({ phigrosDifficulty: 'IN' });
+
+      // 写回后 /me 的 phigros 卡按 IN 的达成统计渲染（同一偏好，不各存一份）。
+      harness.emitGroup('/me', 'msg-me-diff-3');
+      await harness.waitForImageMessage();
+      const card = harness.renderer.cardCalls.at(-1)!;
+      expect(card.cards[1]).toMatchObject({
+        game: 'phigros',
+        difficulty: 'IN',
+        achievements: { played: 30, clear: 25, fc: 15, phi: 5 },
+      });
+    },
+    20_000,
+  );
+
+  it(
+    '/me diff 非法参数：回用法提示且不写后端',
+    async () => {
+      harness = await startHarness();
+      await harness.seedBinding();
+
+      harness.emitGroup('/me diff xyz', 'msg-me-diff-invalid-1');
+      const messages = await harness.waitForMessages('msg-me-diff-invalid-1', 1);
+      expect(String(messages[0]!.body.content)).toContain('/me diff 用法');
+      expect(
+        harness.fakeRankHub.state.requests.some(
+          (request) =>
+            request.path === '/v1/me/display-preferences' && request.method === 'PATCH',
+        ),
+      ).toBe(false);
     },
     20_000,
   );

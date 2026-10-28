@@ -5,6 +5,7 @@ import {
   type BindingStore,
   type DeviceAuthorization,
   type DevicePollResult,
+  type DisplayPreferences,
   type GameBests,
   type GameCapability,
   type GameProfile,
@@ -21,15 +22,20 @@ import { invalidResponse, mapHttpFailure, parseErrorBody } from './errors.js';
 import { HttpTransport, type HttpTransportOptions } from './http.js';
 import {
   asRecord,
+  normalizePhigrosDifficulty,
   readArray,
   readString,
   toDeviceAuthorization,
+  toDisplayPreferences,
   toGameBests,
   toGameCapabilities,
+  toPhigrosStatistics,
   toProfilePage,
   toRankHubIdentity,
   toRankHubTokens,
   toScorePage,
+  type PhigrosLevelStatistics,
+  type PhigrosStatistics,
 } from './wire.js';
 
 /** `createRankHubClient` 需要的配置子集（`loadConfig()` 的返回值天然满足）。 */
@@ -68,8 +74,12 @@ export interface MeProfileGame {
   playerName: string | null;
   rating: number | null;
   isPublic: boolean;
+  /** 头像绝对 URL（老实例为 null）。 */
   avatarUrl: string | null;
+  /** 背景绝对 URL（maimai 为背景板 frame；老实例为 null）。 */
   backgroundUrl: string | null;
+  /** 立绘绝对 URL（目前只有 arcaea；其它游戏 / 老实例为 null）。 */
+  characterArtworkUrl: string | null;
 }
 
 /** `/v1/me/profile`（OAuth 可用的账号资料面）。 */
@@ -80,6 +90,8 @@ export interface MeProfile {
   avatarUrl: string | null;
   bannerUrl: string | null;
   isPublic: boolean;
+  /** 用户显示偏好（`/v1/me/profile` 新字段；缺失时按默认 IN 归一，不阻断名片）。 */
+  displayPreferences: DisplayPreferences;
   games: MeProfileGame[];
 }
 
@@ -102,6 +114,27 @@ export interface RankHubClientExtended extends RankHubClient, MeProfileCapable {
    * 供 commands 层使用（契约里没有这一层）。
    */
   authorize(binding: Binding): Promise<string>;
+  /**
+   * `GET /v1/me/display-preferences`：用户显示偏好。
+   *
+   * `data` 缺失/字段非法时按默认值归一（`IN`）；HTTP / envelope 失败仍抛 `RankHubError`。
+   */
+  getDisplayPreferences(accessToken: string): Promise<DisplayPreferences>;
+  /**
+   * `PATCH /v1/me/display-preferences`：写回显示偏好，返回服务端归一后的值。
+   *
+   * 非法难度在本地就抛 `RankHubError('invalid_argument')`（不发请求）。
+   */
+  updateDisplayPreferences(
+    accessToken: string,
+    preferences: DisplayPreferences,
+  ): Promise<DisplayPreferences>;
+  /**
+   * `GET /v1/games/phigros/profiles/{profileId}/statistics`：Phigros 逐难度达成统计。
+   *
+   * 响应缺少 `data.statistics` 时抛 `RankHubError('server_error')`（不编造统计）。
+   */
+  getPhigrosStatistics(accessToken: string, profileId: string): Promise<PhigrosStatistics>;
 }
 
 /** userinfo 失败时写入的占位 subject（绑定不因此中断）。 */
@@ -296,6 +329,54 @@ export function createRankHubClient(
     return toMeProfile(record);
   }
 
+  /**
+   * `GET /v1/me/display-preferences`：用户显示偏好（Phigros 难度）。
+   *
+   * `data` 缺字段/值非法时由 `toDisplayPreferences()` 回退默认 `IN`；HTTP 失败照常抛错。
+   */
+  async function getDisplayPreferences(accessToken: string): Promise<DisplayPreferences> {
+    const data = await http.getV1(apiUrl('/v1/me/display-preferences'), accessToken);
+    return toDisplayPreferences(data);
+  }
+
+  /**
+   * `PATCH /v1/me/display-preferences`：写回显示偏好并返回服务端归一后的值。
+   *
+   * 非法难度不发请求（本地 `invalid_argument`），避免把脏值写到共享偏好里。
+   */
+  async function updateDisplayPreferences(
+    accessToken: string,
+    preferences: DisplayPreferences,
+  ): Promise<DisplayPreferences> {
+    // 先归一（大小写 / 空格不敏感）再发：写路径不发脏值，也不依赖调用方已归一。
+    const difficulty = normalizePhigrosDifficulty(preferences.phigrosDifficulty);
+    if (difficulty === null) {
+      throw new RankHubError(
+        'invalid_argument',
+        0,
+        `不支持的 Phigros 难度：${String(preferences.phigrosDifficulty)}`,
+      );
+    }
+    const data = await http.patchV1(apiUrl('/v1/me/display-preferences'), accessToken, {
+      phigrosDifficulty: difficulty,
+    });
+    return toDisplayPreferences(data);
+  }
+
+  /** `GET /v1/games/phigros/profiles/{profileId}/statistics`：逐难度达成统计。 */
+  async function getPhigrosStatistics(
+    accessToken: string,
+    profileId: string,
+  ): Promise<PhigrosStatistics> {
+    const data = await http.getV1(
+      apiUrl(
+        `/v1/games/phigros/profiles/${encodeURIComponent(profileId)}/statistics`,
+      ),
+      accessToken,
+    );
+    return toPhigrosStatistics(data);
+  }
+
   async function listProfiles(accessToken: string, game: string): Promise<GameProfile[]> {
     const profiles: GameProfile[] = [];
     let cursor: string | null = null;
@@ -467,6 +548,9 @@ export function createRankHubClient(
     userinfo,
     listGames,
     getMeProfile,
+    getDisplayPreferences,
+    updateDisplayPreferences,
+    getPhigrosStatistics,
     listProfiles,
     getBests,
     listScores,
@@ -499,6 +583,8 @@ function toMeProfile(record: Record<string, unknown>): MeProfile {
         isPublic: row['isPublic'] === true,
         avatarUrl: typeof row['avatarUrl'] === 'string' ? row['avatarUrl'] : null,
         backgroundUrl: typeof row['backgroundUrl'] === 'string' ? row['backgroundUrl'] : null,
+        characterArtworkUrl:
+          typeof row['characterArtworkUrl'] === 'string' ? row['characterArtworkUrl'] : null,
       });
     }
   }
@@ -509,6 +595,10 @@ function toMeProfile(record: Record<string, unknown>): MeProfile {
     avatarUrl: typeof record['avatarUrl'] === 'string' ? record['avatarUrl'] : null,
     bannerUrl: typeof record['bannerUrl'] === 'string' ? record['bannerUrl'] : null,
     isPublic: record['isPublic'] === true,
+    // 容错缺省：老实例 / 老版本响应没有该字段时按默认 IN（与契约默认值一致）。
+    displayPreferences: toDisplayPreferences(record['displayPreferences']),
     games,
   };
 }
+
+export type { PhigrosLevelStatistics, PhigrosStatistics };

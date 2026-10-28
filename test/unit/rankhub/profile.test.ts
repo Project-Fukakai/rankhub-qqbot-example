@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GameProfile } from '../../../src/contracts/index.js';
 import {
+  arcaeaCharacterArtworkUrl,
   DEFAULT_ASSET_BASE_URL,
   DEFAULT_GAME_ASSET_ORIGIN,
   describeProfile,
@@ -9,21 +10,23 @@ import {
   normalizeAssetUrl,
   originOf,
 } from '../../../src/rankhub/profile.js';
-
 import {
   arcaeaFormat,
   arcaeaProfileEmptyAssets,
   arcaeaProfileV1,
+  arcaeaProfileV1Assets,
   arcaeaProfileWithAssets,
   bareProfile,
   maimaiFormat,
   maimaiFormatNarrow,
   maimaiProfile,
+  maimaiProfileV1Assets,
   phigrosFormat,
   phigrosProfileAbsoluteAvatar,
   phigrosProfileSnakeCase,
   phigrosProfileV0Shape,
   phigrosProfileV1,
+  phigrosProfileV1Assets,
   phigrosProfileWithAssets,
   unknownGameProfile,
 } from './profile.fixtures.js';
@@ -284,5 +287,108 @@ describe('资产 URL 归一（镜像 App _normalizeAssetUrl）', () => {
     expect(normalizeAssetUrl('   ')).toBeNull();
     expect(normalizeAssetUrl('null')).toBeNull();
     expect(normalizeAssetUrl('  https://a.example/b.png  ')).toBe('https://a.example/b.png');
+  });
+});
+
+describe('describeProfile / v1 assets 优先与老实例回退', () => {
+  it('maimai：assets 提供头像 + 背景板（frame），优先于 native', () => {
+    const view = describeProfile('maimai', maimaiProfileV1Assets);
+    expect(view.avatarUrl).toBe('https://cdn.test/maimai/avatar.png');
+    // v1 assets.backgroundUrl = 用户背景板（frame）URL（契约 §3.1）。
+    expect(view.backgroundUrl).toBe('https://cdn.test/maimai/frame.png');
+    expect(view.characterArtworkUrl).toBeNull();
+    // 字段映射不受 assets 影响。
+    expect(view.rating).toBe(15370);
+  });
+
+  it('maimai 老实例（无 assets）保持本地规则：头像来自 native.avatarUrl、背景为 null', () => {
+    const view = describeProfile('maimai', {
+      ...maimaiProfile,
+      player: {
+        ...maimaiProfile.player,
+        native: { avatar_url: 'https://cdn.example.com/mai.png' },
+      },
+    });
+    expect(view.avatarUrl).toBe('https://cdn.example.com/mai.png');
+    expect(view.backgroundUrl).toBeNull();
+    expect(view.characterArtworkUrl).toBeNull();
+  });
+
+  it('phigros：assets 覆盖本地 avatarAssetKey / backgroundSongId 规则', () => {
+    const view = describeProfile('phigros', phigrosProfileV1Assets);
+    expect(view.avatarUrl).toBe('https://cdn.test/phigros/avatar.png');
+    expect(view.backgroundUrl).toBe('https://cdn.test/phigros/background.png');
+    expect(view.characterArtworkUrl).toBeNull();
+  });
+
+  it('phigros 老实例（无 assets）回退本地规则，URL 不变（不回归）', () => {
+    const view = describeProfile('phigros', phigrosProfileWithAssets);
+    expect(view.avatarUrl).toBe(
+      'https://static.rankhub.cc/phigros/asset/avatar.Introduction.jpg',
+    );
+    expect(view.backgroundUrl).toBe(
+      'https://static.rankhub.cc/phigros/asset/Assets/Tracks/Glaciaxion.SunsetRay.0/Illustration.jpg.jpg',
+    );
+    expect(view.characterArtworkUrl).toBeNull();
+  });
+
+  it('assets 字段是空串时按缺失处理，仍回退本地规则', () => {
+    const view = describeProfile('phigros', {
+      ...phigrosProfileWithAssets,
+      assets: { avatarUrl: '', backgroundUrl: '  ', characterArtworkUrl: '' },
+    });
+    expect(view.avatarUrl).toBe(
+      'https://static.rankhub.cc/phigros/asset/avatar.Introduction.jpg',
+    );
+    expect(view.backgroundUrl).toBe(
+      'https://static.rankhub.cc/phigros/asset/Assets/Tracks/Glaciaxion.SunsetRay.0/Illustration.jpg.jpg',
+    );
+  });
+
+  it('arcaea：assets 提供头像 / 名片板 / 立绘，优先于 native', () => {
+    const view = describeProfile('arcaea', arcaeaProfileV1Assets);
+    expect(view.avatarUrl).toBe('https://cdn.test/arcaea/avatar.png');
+    expect(view.backgroundUrl).toBe('https://cdn.test/arcaea/nameplate.png');
+    expect(view.characterArtworkUrl).toBe('https://cdn.test/arcaea/char/1080/0.png');
+  });
+
+  it('arcaea 老实例（无 assets）：立绘回退 App 的 char/1080 规则', () => {
+    const view = describeProfile('arcaea', arcaeaProfileV1);
+    expect(view.avatarUrl).toBe('https://static.rankhub.cc/arcaea/asset/char/0_icon.png');
+    expect(view.characterArtworkUrl).toBe(
+      'https://static.rankhub.cc/arcaea/asset/char/1080/0.png',
+    );
+
+    const empty = describeProfile('arcaea', arcaeaProfileEmptyAssets);
+    expect(empty.characterArtworkUrl).toBeNull();
+  });
+
+  it('未知游戏：服务端给 assets 就照用，不给保持空（不猜）', () => {
+    const withAssets = describeProfile('chunithm', {
+      ...unknownGameProfile,
+      assets: {
+        avatarUrl: 'https://cdn.test/chuni/avatar.png',
+        backgroundUrl: 'https://cdn.test/chuni/background.png',
+        characterArtworkUrl: null,
+      },
+    });
+    expect(withAssets.avatarUrl).toBe('https://cdn.test/chuni/avatar.png');
+    expect(withAssets.backgroundUrl).toBe('https://cdn.test/chuni/background.png');
+
+    const withoutAssets = describeProfile('chunithm', unknownGameProfile);
+    expect(withoutAssets.avatarUrl).toBeNull();
+    expect(withoutAssets.backgroundUrl).toBeNull();
+    expect(withoutAssets.characterArtworkUrl).toBeNull();
+  });
+
+  it('arcaeaCharacterArtworkUrl 对空/缺失搭档返回 null，对有效值做百分号编码', () => {
+    expect(arcaeaCharacterArtworkUrl(null)).toBeNull();
+    expect(arcaeaCharacterArtworkUrl('  ')).toBeNull();
+    expect(arcaeaCharacterArtworkUrl('1080')).toBe(
+      'https://static.rankhub.cc/arcaea/asset/char/1080/1080.png',
+    );
+    expect(arcaeaCharacterArtworkUrl('a/b c')).toBe(
+      'https://static.rankhub.cc/arcaea/asset/char/1080/a%2Fb%20c.png',
+    );
   });
 });
